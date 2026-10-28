@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RideHUD UI Preview</title>
+  <style>
+    :root {
+      --neon-cyan: #4FD8EB;
+      --neon-violet: #C4B5FD;
+      --neon-pink: #F9A8D4;
+      --neon-lime: #6EE7B7;
+      --neon-amber: #FCD34D;
+      --neon-rose: #FB7185;
+      --ink: #E8F8FC;
+      --slate-950: #0B1218;
+      --slate-900: #111A22;
+      --surface: #162029;
+      --surface-high: #1C2833;
+      --surface-highest: #23303C;
+      --outline: #3D4E5C;
+      --muted: #A7B6C2;
+      --primary-container: #004E5C;
+      --on-primary-container: #B6F0FA;
+      --on-primary: #003640;
+      --bg0: #030712;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "SF Pro Display", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 0%, rgba(79, 216, 235, 0.12), transparent),
+        radial-gradient(ellipse 50% 40% at 90% 100%, rgba(249, 168, 212, 0.08), transparent),
+        #070b10;
+      padding: 32px 24px 48px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      letter-spacing: 0.04em;
+    }
+    .intro {
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 14px;
+      max-width: 720px;
+      line-height: 1.5;
+    }
+
+    .gallery {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .phone-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .phone-label {
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--neon-cyan);
+      opacity: 0.85;
+    }
+
+    .phone {
+      width: 360px;
+      height: 740px;
+      border-radius: 36px;
+      padding: 12px;
+      background: linear-gradient(145deg, #1a2430, #0a1016);
+      box-shadow:
+        0 0 0 1px rgba(79, 216, 235, 0.18),
+        0 24px 60px rgba(0, 0, 0, 0.55);
+      position: relative;
+    }
+    .phone-screen {
+      width: 100%;
+      height: 100%;
+      border-radius: 28px;
+      overflow: hidden;
+      position: relative;
+      background:
+        radial-gradient(circle at 50% -5%, rgba(79, 216, 235, 0.14), transparent 55%),
+        radial-gradient(circle at 105% 105%, rgba(249, 168, 212, 0.10), transparent 50%),
+        linear-gradient(180deg, var(--bg0), var(--slate-900) 45%, var(--slate-950));
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen-pad { padding: 16px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .screen-pad.tight { padding: 12px 16px 16px; }
+
+    .brand-tag {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      color: rgba(79, 216, 235, 0.85);
+      font-weight: 600;
+    }
+    .brand-name {
+      font-size: 22px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .brand-name.sm { font-size: 18px; }
+
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .row.gap { gap: 10px; }
+    .grow { flex: 1; min-width: 0; }
+
+    .card {
+      background: var(--surface);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    }
+    .card.high { background: var(--surface-high); }
+    .card.variant { background: rgba(28, 40, 51, 0.95); }
+    .card.selected {
+      background: var(--primary-container);
+      box-shadow: 0 8px 22px rgba(0, 78, 92, 0.45);
+    }
+    .card.selected .t { color: var(--on-primary-container); }
+    .card.selected .s { color: rgba(182, 240, 250, 0.75); }
+
+    .label {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .body { font-size: 14px; line-height: 1.55; color: var(--ink); }
+    .hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .t { font-size: 16px; font-weight: 600; }
+    .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .btn {
+      border: none;
+      border-radius: 999px;
+      height: 48px;
+      padding: 0 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn.primary {
+      background: var(--neon-cyan);
+      color: var(--on-primary);
+    }
+    .btn.tonal {
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+    }
+    .btn.outline {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid rgba(61, 78, 92, 0.8);
+    }
+    .btn.block { width: 100%; }
+    .btn.tall { height: 52px; font-size: 16px; font-weight: 700; }
+    .btn.text {
+      background: transparent;
+      color: var(--neon-cyan);
+      height: auto;
+      padding: 8px 10px;
+      font-weight: 600;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid rgba(110, 231, 183, 0.4);
+      background: rgba(6, 78, 59, 0.55);
+      color: #A7F3D0;
+    }
+    .chip.paused {
+      border-color: var(--outline);
+      background: var(--surface-high);
+      color: #CBD5E1;
+    }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--neon-lime);
+      animation: pulse 1.4s ease-in-out infinite alternate;
+    }
+    .chip.paused .dot { background: #CBD5E1; animation: none; }
+    @keyframes pulse { from { opacity: 1; } to { opacity: 0.35; } }
+
+    /* HUD */
+    .hud-top { margin-bottom: 4px; }
+    .speed-area {
+      flex: 1.2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+    }
+    .ring {
+      --progress: 0.55;
+      width: 72%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      position: relative;
+      background:
+        conic-gradient(
+          from -90deg,
+          #4FD8EB 0%,
+          #7DD3FC calc(var(--progress) * 40%),
+          #5EEAD4 calc(var(--progress) * 72%),
+          #FDBA74 calc(var(--progress) * 100%),
+          rgba(79, 216, 235, 0.12) calc(var(--progress) * 100%),
+          rgba(79, 216, 235, 0.12) 100%
+        );
+      display: grid;
+      place-items: center;
+      transition: background 0.35s ease;
+    }
+    .ring::before {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 40%, #101820, #0B1218 70%);
+      box-shadow: inset 0 0 0 1px rgba(79, 216, 235, 0.08);
+    }
+    .ring-inner {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+    }
+    .speed-num {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 56px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .unit {
+      font-size: 12px;
+      color: var(--neon-cyan);
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .sec-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+    .metric-val {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 28px;
+      font-weight: 700;
+      margin-top: 6px;
+      line-height: 1;
+    }
+    .metric-val .u {
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 4px;
+      opacity: 0.8;
+    }
+    .hr { color: #5EEAD4; transition: color 0.35s ease; }
+
+    .strip {
+      margin-top: 10px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--surface-high);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+    .strip-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      padding: 12px 0;
+    }
+    .strip-row + .strip-row { border-top: 1px solid rgba(61, 78, 92, 0.35); }
+    .cell {
+      text-align: center;
+      position: relative;
+      padding: 0 4px;
+    }
+    .cell:not(:first-child)::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 50%;
+      transform: translateY(-50%);
+      width: 1px; height: 44px;
+      background: rgba(61, 78, 92, 0.3);
+    }
+    .cell .v {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 17px;
+      font-weight: 700;
+      margin: 4px 0 2px;
+    }
+    .cell .u { font-size: 11px; color: rgba(79, 216, 235, 0.7); }
+    .grade-climb { color: #FDBA74; }
+    .grade-flat { color: #7DD3FC; }
+    .grade-desc { color: #5EEAD4; }
+
+    .actions { display: flex; gap: 10px; margin-top: 12px; }
+    .actions .btn.primary { flex: 1.25; }
+    .actions .btn.tonal { flex: 1; }
+
+    /* Connect */
+    .spacer { height: 12px; }
+    .device-list { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; margin: 4px 0 8px; overflow: auto; }
+    .device {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+    }
+    .rssi { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+    /* History */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 8px 10px 4px;
+      background: rgba(17, 26, 34, 0.92);
+      border-bottom: 1px solid rgba(61, 78, 92, 0.25);
+    }
+    .icon-btn {
+      width: 40px; height: 40px;
+      border: none; border-radius: 50%;
+      background: transparent;
+      color: var(--ink);
+      font-size: 18px;
+      display: grid; place-items: center;
+    }
+    .icon-btn.muted { color: var(--muted); }
+    .list {
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: auto;
+      flex: 1;
+    }
+    .ride-item {
+      background: var(--surface-high);
+      border-radius: 16px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+    .ride-item .avg {
+      text-align: right;
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--neon-cyan);
+    }
+    .ride-item .avg small {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted);
+      font-family: inherit;
+    }
+
+    .detail-pad { padding: 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow: auto; }
+    .metric-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      padding: 2px 0;
+    }
+    .metric-line span:first-child { color: var(--muted); }
+    .metric-line span:last-child { font-weight: 600; }
+
+    .chart-card { padding: 14px 14px 12px; }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .chart-head .title { font-size: 16px; font-weight: 650; }
+    .chart-head .unit { font-size: 12px; color: var(--neon-cyan); font-weight: 600; }
+    .chart-frame {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      gap: 6px;
+      height: 140px;
+    }
+    .chart-ylabels {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 2px 0 16px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .chart-canvas-wrap { position: relative; min-width: 0; }
+    .chart-canvas-wrap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .chart-xlabels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      margin-left: 36px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 8px;
+      font-size: 11px;
+    }
+    .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .chart-legend i {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    }
+
+    .note {
+      margin-top: 36px;
+      max-width: 1100px;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 16px 18px;
+      border-radius: 14px;
+      background: rgba(22, 32, 41, 0.7);
+      border: 1px solid rgba(61, 78, 92, 0.45);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .note strong { color: var(--ink); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>RideHUD · 当前 UI 预览</h1>
+  <p class="intro">
+    按现有 Compose 实现还原：连接页 / 骑行 HUD / 记录列表 + 详情。
+    配色取自 M3 neon 主题（cyan / surfaceContainer）。浏览器打开本文件即可对照，标出想改的地方。
+  </p>
+
+  <div class="gallery">
+    <!-- CONNECT -->
+    <div class="phone-wrap">
+      <div class="phone-label">01 · Connect</div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="screen-pad">
+            <div class="row">
+              <div>
+                <div class="brand-tag">RIDEHUD</div>
+                <div class="brand-name">骑行 HUD</div>
+              </div>
+              <button class="btn text">记录</button>
+            </div>
+
+            <div class="spacer"></div>
+            <div class="card">
+              <div class="label">CONNECT</div>
+              <p class="body" style="margin: 8px 0 0;">
+                先在手表开启「心率广播 / HR Broadcast」，再扫描连接。支持华为、Garmin、COROS、心率带等标准 BLE 设备。
+              </p>
+            </div>
+
+            <div class="spacer"></div>
+            <div class="row gap">
+              <button class="btn tonal grow">扫描设备</button>
+              <span class="chip" style="border-color: rgba(79,216,235,.35); background: rgba(0,78,92,.45); color: var(--on-primary-container);">GT Runner</span>
+            </div>
+
+            <div class="device-list">
+              <div class="device card selected" style="padding: 14px 16px;">
+                <div>
+                  <div class="t">HUAWEI Watch GT Runner</div>
+                  <div class="s">AA:BB:CC:DD:EE:01</div>
+                </div>
+                <div class="rssi" style="color: var(--on-primary-container);">-58 dBm</div>
+              </div>
+              <div class="device">
+                <div>
+                  <div class="t">COROS PACE</div>
+                  <div class="s">11:22:33:44:55:66</div>
+                </div>
+                <div class="rssi">-72 dBm</div>
+              </div>
+            </div>
+
+            <button class="btn primary block tall">开始骑行</button>
+            <p class="hint" style="text-align:center; margin: 8px 0 0;">可不选手表，仅用手机 GPS</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div class="phone-wrap">
+      <div class="phone-label">02 · HUD</div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="screen-pad tight">
+            <div class="row hud-top">
+              <div>
+                <div class="brand-tag">RIDEHUD</div>
+                <div class="brand-name sm">骑行 HUD</div>
+              </div>
+              <span class="chip"><span class="dot"></span>LIVE</span>
+            </div>
+
+            <div class="speed-area">
+              <div class="ring" id="hud-ring" style="--progress: 0.55">
+                <div class="ring-inner">
+                  <div class="label">SPEED</div>
+                  <div class="speed-num" id="hud-speed">24.6</div>
+                  <div class="unit">km/h</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec-row">
+              <div class="card">
+                <div class="label">心率 HEART</div>
+                <div class="metric-val hr"><span id="hud-hr">142</span><span class="u">bpm</span></div>
+              </div>
+              <div class="card">
+                <div class="label">时长 TIME</div>
+                <div class="metric-val" id="hud-time">48:22</div>
+              </div>
+            </div>
+
+            <div class="strip">
+              <div class="strip-row">
+                <div class="cell">
+                  <div class="label">距离</div>
+                  <div class="v" id="hud-dist">18.42</div>
+                  <div class="u">km</div>
+                </div>
+                <div class="cell">
+                  <div class="label">均速</div>
+                  <div class="v" id="hud-avg">22.8</div>
+                  <div class="u">km/h</div>
+                </div>
+                <div class="cell">
+                  <div class="label">热量</div>
+                  <div class="v" id="hud-kcal">486</div>
+                  <div class="u">kcal</div>
+                </div>
+              </div>
+              <div class="strip-row">
+                <div class="cell">
+                  <div class="label">海拔</div>
+                  <div class="v" id="hud-alt">86</div>
+                  <div class="u">m</div>
+                </div>
+                <div class="cell">
+                  <div class="label">坡度</div>
+                  <div class="v grade-climb" id="hud-grade">+3.2</div>
+                  <div class="u">%</div>
+                </div>
+                <div class="cell">
+                  <div class="label">峰值速</div>
+                  <div class="v" id="hud-max">38.1</div>
+                  <div class="u">km/h</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn primary">暂停</button>
+              <button class="btn tonal">结束</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY LIST -->
+    <div class="phone-wrap">
+      <div class="phone-label">03 · Records</div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="topbar">
+            <button class="icon-btn">←</button>
+            <div class="grow">
+              <div style="font-size:18px;font-weight:700;">记录</div>
+              <div class="hint" style="margin:0;">骑行数据列表</div>
+            </div>
+            <button class="icon-btn muted">⚙</button>
+          </div>
+          <div class="list">
+            <div class="ride-item">
+              <div>
+                <div class="t">2026-10-28 07:12</div>
+                <div class="s">01:12:08 · 28.40 km · 712 kcal</div>
+              </div>
+              <div class="avg">23.6<small>km/h</small></div>
+            </div>
+            <div class="ride-item">
+              <div>
+                <div class="t">2026-10-26 18:40</div>
+                <div class="s">00:48:22 · 18.42 km · 486 kcal</div>
+              </div>
+              <div class="avg">22.8<small>km/h</small></div>
+            </div>
+            <div class="ride-item">
+              <div>
+                <div class="t">2026-10-22 06:55</div>
+                <div class="s">00:35:10 · 12.05 km · 301 kcal</div>
+              </div>
+              <div class="avg">20.5<small>km/h</small></div>
+            </div>
+            <div class="ride-item">
+              <div>
+                <div class="t">2026-10-19 17:20</div>
+                <div class="s">01:05:44 · 25.10 km · 640 kcal</div>
+              </div>
+              <div class="avg">22.9<small>km/h</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETAIL -->
+    <div class="phone-wrap">
+      <div class="phone-label">04 · Detail</div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="topbar">
+            <button class="icon-btn">←</button>
+            <div class="grow">
+              <div style="font-size:18px;font-weight:700;">记录</div>
+              <div class="hint" style="margin:0;">骑行数据列表</div>
+            </div>
+            <button class="icon-btn muted">⋯</button>
+            <button class="icon-btn muted">⚙</button>
+          </div>
+          <div class="detail-pad">
+            <div class="card high">
+              <div style="font-size:20px;font-weight:700;margin-bottom:10px;">2026-10-26 18:40</div>
+              <div class="metric-line"><span>时长</span><span>00:48:22</span></div>
+              <div class="metric-line"><span>距离</span><span>18.42 km</span></div>
+              <div class="metric-line"><span>热量</span><span>486 kcal</span></div>
+              <div class="metric-line"><span>均速</span><span>22.8 km/h</span></div>
+              <div class="metric-line"><span>极速</span><span>38.1 km/h</span></div>
+              <div class="metric-line"><span>爬升</span><span>186 m</span></div>
+            </div>
+            <div class="card chart-card">
+              <div class="chart-head">
+                <div class="title">速度曲线</div>
+                <div class="unit" style="color:#6EE7B7">km/h</div>
+              </div>
+              <div class="chart-frame">
+                <div class="chart-ylabels" id="speed-ylabels"><span>40</span><span>20</span><span>0</span></div>
+                <div class="chart-canvas-wrap"><canvas id="speed-chart" width="280" height="140"></canvas></div>
+              </div>
+              <div class="chart-xlabels"><span>0:00</span><span>48:22</span></div>
+              <div class="chart-legend">
+                <span style="color:#5EEAD4"><i style="background:#5EEAD4"></i>均速 22.8</span>
+                <span style="color:#FB7185"><i style="background:#FB7185"></i>极速 38.1</span>
+              </div>
+            </div>
+            <div class="card chart-card">
+              <div class="chart-head">
+                <div class="title">心率曲线</div>
+                <div class="unit" style="color:#6EE7B7">bpm</div>
+              </div>
+              <div class="chart-frame">
+                <div class="chart-ylabels" id="hr-ylabels"><span>160</span><span>120</span><span>80</span></div>
+                <div class="chart-canvas-wrap"><canvas id="hr-chart" width="280" height="140"></canvas></div>
+              </div>
+              <div class="chart-xlabels"><span>0:00</span><span>48:22</span></div>
+              <div class="chart-legend">
+                <span style="color:#5EEAD4"><i style="background:#5EEAD4"></i>均心率 138</span>
+                <span style="color:#FB7185"><i style="background:#FB7185"></i>峰值心率 162</span>
+              </div>
+            </div>
+            <div class="card chart-card">
+              <div class="chart-head">
+                <div class="title">海拔曲线</div>
+                <div class="unit" style="color:#6EE7B7">m</div>
+              </div>
+              <div class="chart-frame">
+                <div class="chart-ylabels" id="alt-ylabels"><span>160</span><span>100</span><span>40</span></div>
+                <div class="chart-canvas-wrap"><canvas id="alt-chart" width="280" height="140"></canvas></div>
+              </div>
+              <div class="chart-xlabels"><span>0:00</span><span>48:22</span></div>
+              <div class="chart-legend">
+                <span style="color:#FB7185"><i style="background:#FB7185"></i>最高 152</span>
+                <span style="color:#5EEAD4"><i style="background:#5EEAD4"></i>最低 48</span>
+              </div>
+            </div>
+            <button class="btn outline block">删除</button>
+            <p class="hint">手表热量 / 导出 CSV·JSON 收在右上角「⋯」；体重在「⚙」。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>对照说明：</strong>
+    HUD 主数字是车速环；次级为心率 | 时长；底部两行三列（距离/均速/热量 · 海拔/坡度/峰值速）；按钮为「暂停 / 结束」。
+    记录页以列表为主，高级能力藏在菜单。若要改布局、字号、颜色或信息优先级，直接说改哪一屏即可。
+  </div>
+
+  <script>
+    (function () {
+      const MAX_SPEED = 45;
+      const state = {
+        speed: 24.6,
+        hr: 142,
+        elapsed: 48 * 60 + 22,
+        dist: 18.42,
+        avg: 22.8,
+        kcal: 486,
+        alt: 86,
+        grade: 3.2,
+        max: 38.1,
+      };
+      const target = { ...state };
+
+      const el = {
+        ring: document.getElementById("hud-ring"),
+        speed: document.getElementById("hud-speed"),
+        hr: document.getElementById("hud-hr"),
+        time: document.getElementById("hud-time"),
+        dist: document.getElementById("hud-dist"),
+        avg: document.getElementById("hud-avg"),
+        kcal: document.getElementById("hud-kcal"),
+        alt: document.getElementById("hud-alt"),
+        grade: document.getElementById("hud-grade"),
+        max: document.getElementById("hud-max"),
+      };
+
+      function rand(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function formatTime(sec) {
+        const s = Math.floor(sec);
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const r = s % 60;
+        if (h > 0) {
+          return h + ":" + String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+        }
+        return String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+      }
+
+      function retarget() {
+        target.speed = Math.max(8, Math.min(42, state.speed + rand(-4.5, 4.5)));
+        target.hr = Math.round(Math.max(95, Math.min(175, state.hr + rand(-14, 14))));
+        target.grade = Math.max(-6, Math.min(9, state.grade + rand(-1.8, 1.8)));
+        target.alt = Math.max(40, Math.min(220, state.alt + rand(-4, 5)));
+        target.avg = Math.max(16, Math.min(28, 0.92 * state.avg + 0.08 * state.speed + rand(-0.2, 0.2)));
+      }
+
+      function hrColor(bpm) {
+        if (bpm < 110) return "#7DD3FC";
+        if (bpm < 135) return "#5EEAD4";
+        if (bpm < 155) return "#FDBA74";
+        return "#FB7185";
+      }
+
+      function gradeTone(g) {
+        if (g > 0.5) return { cls: "grade-climb", color: "#FDBA74" };
+        if (g < -0.5) return { cls: "grade-desc", color: "#5EEAD4" };
+        return { cls: "grade-flat", color: "#7DD3FC" };
+      }
+
+      function paint() {
+        el.speed.textContent = state.speed.toFixed(1);
+        const hr = Math.round(state.hr);
+        el.hr.textContent = String(hr);
+        const hrEl = el.hr.parentElement;
+        if (hrEl) hrEl.style.color = hrColor(hr);
+        el.time.textContent = formatTime(state.elapsed);
+        el.dist.textContent = state.dist.toFixed(2);
+        el.avg.textContent = state.avg.toFixed(1);
+        el.kcal.textContent = String(Math.round(state.kcal));
+        el.alt.textContent = String(Math.round(state.alt));
+        const g = state.grade;
+        el.grade.textContent = (g >= 0 ? "+" : "") + g.toFixed(1);
+        const tone = gradeTone(g);
+        el.grade.className = "v " + tone.cls;
+        el.grade.style.color = tone.color;
+        el.max.textContent = state.max.toFixed(1);
+        el.ring.style.setProperty("--progress", String(Math.min(1, state.speed / MAX_SPEED)));
+      }
+
+      setInterval(retarget, 900);
+      setInterval(function () {
+        state.elapsed += 1;
+        state.dist += state.speed / 3600;
+        state.kcal += (state.speed * 0.012 + state.hr * 0.0015) / 10;
+        if (state.speed > state.max) state.max = state.speed;
+      }, 1000);
+
+      function tick() {
+        state.speed = lerp(state.speed, target.speed, 0.08);
+        state.hr = lerp(state.hr, target.hr, 0.1);
+        state.grade = lerp(state.grade, target.grade, 0.07);
+        state.alt = lerp(state.alt, target.alt, 0.06);
+        state.avg = lerp(state.avg, target.avg, 0.04);
+        paint();
+        requestAnimationFrame(tick);
+      }
+
+      retarget();
+      paint();
+      requestAnimationFrame(tick);
+
+      // Detail charts — match Compose Canvas palettes
+      (function drawDetailCharts() {
+        const durationSec = 48 * 60 + 22;
+        const n = 180;
+
+        function seriesFrom(fn) {
+          const pts = [];
+          for (let i = 0; i < n; i++) {
+            const t = i / (n - 1);
+            pts.push({ t: t * durationSec, v: fn(t, i) });
+          }
+          return pts;
+        }
+
+        let speed = 18;
+        const speedPts = seriesFrom(function (t) {
+          const wave = 22 + 8 * Math.sin(t * Math.PI * 2.2) + 5 * Math.sin(t * Math.PI * 5.5);
+          const burst = t > 0.62 && t < 0.72 ? 10 : 0;
+          speed = Math.max(4, Math.min(38.1, 0.75 * speed + 0.25 * (wave + burst) + (Math.random() - 0.5) * 2.2));
+          return speed;
+        });
+        speedPts[Math.floor(n * 0.67)].v = 38.1;
+
+        let hr = 120;
+        const hrPts = seriesFrom(function (t) {
+          const wave = 128 + 18 * Math.sin(t * Math.PI * 1.8) + 8 * Math.sin(t * Math.PI * 4.4);
+          const climb = t > 0.55 && t < 0.75 ? 16 : 0;
+          hr = Math.max(95, Math.min(162, 0.82 * hr + 0.18 * (wave + climb) + (Math.random() - 0.5) * 3));
+          return hr;
+        });
+        hrPts[Math.floor(n * 0.68)].v = 162;
+
+        let alt = 70;
+        const altPts = seriesFrom(function (t) {
+          const hill = 90 + 40 * Math.sin(t * Math.PI * 1.15) + 12 * Math.sin(t * Math.PI * 3.1);
+          alt = Math.max(48, Math.min(152, 0.88 * alt + 0.12 * hill + (Math.random() - 0.5) * 1.4));
+          return alt;
+        });
+        altPts[Math.floor(n * 0.42)].v = 152;
+        altPts[Math.floor(n * 0.08)].v = 48;
+
+        function drawMetricChart(opts) {
+          const canvas = document.getElementById(opts.canvasId);
+          const yLabels = document.getElementById(opts.yLabelId);
+          if (!canvas) return;
+          const points = opts.points;
+          const axisMin = opts.axisMin;
+          const axisMax = opts.axisMax;
+          const span = Math.max(1, axisMax - axisMin);
+          if (yLabels) {
+            const mid = Math.round((axisMin + axisMax) / 2);
+            yLabels.innerHTML =
+              "<span>" + Math.round(axisMax) + "</span><span>" + mid + "</span><span>" + Math.round(axisMin) + "</span>";
+          }
+
+          const dpr = window.devicePixelRatio || 1;
+          const cssW = canvas.clientWidth || 280;
+          const cssH = canvas.clientHeight || 140;
+          canvas.width = Math.round(cssW * dpr);
+          canvas.height = Math.round(cssH * dpr);
+          const ctx = canvas.getContext("2d");
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+          const topPad = 4;
+          const bottomPad = 4;
+          const chartW = cssW;
+          const chartH = cssH - topPad - bottomPad;
+          const originY = topPad + chartH;
+          function xOf(sec) { return (sec / durationSec) * chartW; }
+          function yOf(v) { return originY - ((v - axisMin) / span) * chartH; }
+
+          ctx.strokeStyle = "rgba(61, 78, 92, 0.28)";
+          ctx.lineWidth = 1;
+          [0, 0.5, 1].forEach(function (p) {
+            const y = originY - p * chartH;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(chartW, y);
+            ctx.stroke();
+          });
+
+          (opts.guides || []).forEach(function (g, index) {
+            if (g.value < axisMin || g.value > axisMax) return;
+            ctx.save();
+            ctx.strokeStyle = g.color;
+            ctx.lineWidth = index === 0 ? 1.5 : 1;
+            ctx.setLineDash(index === 0 ? [8, 6] : [5, 6]);
+            ctx.beginPath();
+            ctx.moveTo(0, yOf(g.value));
+            ctx.lineTo(chartW, yOf(g.value));
+            ctx.stroke();
+            ctx.restore();
+          });
+
+          const fill = ctx.createLinearGradient(0, topPad, 0, originY);
+          fill.addColorStop(0, opts.fillTop);
+          fill.addColorStop(0.55, opts.fillMid);
+          fill.addColorStop(1, opts.fillBottom);
+          ctx.beginPath();
+          ctx.moveTo(xOf(points[0].t), originY);
+          points.forEach(function (p) { ctx.lineTo(xOf(p.t), yOf(p.v)); });
+          ctx.lineTo(xOf(points[points.length - 1].t), originY);
+          ctx.closePath();
+          ctx.fillStyle = fill;
+          ctx.fill();
+
+          // Stroke color follows value intensity (not time)
+          function hexToRgb(hex) {
+            const h = hex.replace("#", "");
+            return [
+              parseInt(h.slice(0, 2), 16),
+              parseInt(h.slice(2, 4), 16),
+              parseInt(h.slice(4, 6), 16),
+            ];
+          }
+          function colorAtIntensity(t, stops) {
+            const x = Math.max(0, Math.min(1, t)) * (stops.length - 1);
+            const i = Math.min(Math.floor(x), stops.length - 2);
+            const local = x - i;
+            const a = hexToRgb(stops[i]);
+            const b = hexToRgb(stops[i + 1]);
+            const r = Math.round(a[0] + (b[0] - a[0]) * local);
+            const g = Math.round(a[1] + (b[1] - a[1]) * local);
+            const bl = Math.round(a[2] + (b[2] - a[2]) * local);
+            return "rgb(" + r + "," + g + "," + bl + ")";
+          }
+          ctx.lineWidth = 2.4;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1];
+            const b = points[i];
+            const mid = (a.v + b.v) * 0.5;
+            const intensity = (mid - axisMin) / span;
+            ctx.strokeStyle = colorAtIntensity(intensity, opts.lineStops);
+            ctx.beginPath();
+            ctx.moveTo(xOf(a.t), yOf(a.v));
+            ctx.lineTo(xOf(b.t), yOf(b.v));
+            ctx.stroke();
+          }
+        }
+
+        // low → high intensity
+        const sharedLineStops = ["#5EEAD4", "#6EE7B7", "#FDBA74", "#FB7185"];
+        const sharedFill = {
+          fillTop: "rgba(251, 113, 133, 0.22)",
+          fillMid: "rgba(110, 231, 183, 0.12)",
+          fillBottom: "rgba(94, 234, 212, 0.04)",
+        };
+
+        drawMetricChart({
+          canvasId: "speed-chart",
+          yLabelId: "speed-ylabels",
+          points: speedPts,
+          axisMin: 0,
+          axisMax: 40,
+          guides: [
+            { value: 22.8, color: "rgba(94, 234, 212, 0.8)" },
+            { value: 38.1, color: "rgba(251, 113, 133, 0.7)" },
+          ],
+          ...sharedFill,
+          lineStops: sharedLineStops,
+        });
+
+        drawMetricChart({
+          canvasId: "hr-chart",
+          yLabelId: "hr-ylabels",
+          points: hrPts,
+          axisMin: 80,
+          axisMax: 170,
+          guides: [
+            { value: 138, color: "rgba(94, 234, 212, 0.8)" },
+            { value: 162, color: "rgba(251, 113, 133, 0.7)" },
+          ],
+          ...sharedFill,
+          lineStops: sharedLineStops,
+        });
+
+        drawMetricChart({
+          canvasId: "alt-chart",
+          yLabelId: "alt-ylabels",
+          points: altPts,
+          axisMin: 40,
+          axisMax: 160,
+          guides: [
+            { value: 152, color: "rgba(251, 113, 133, 0.7)" },
+            { value: 48, color: "rgba(94, 234, 212, 0.8)" },
+          ],
+          ...sharedFill,
+          lineStops: sharedLineStops,
+        });
+      })();
+    })();
+  </script>
+</body>
+</html>
