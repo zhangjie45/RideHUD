@@ -26,4 +26,42 @@ class ElevationMathTest {
         assertEquals(-5f, ElevationTracker.gradePercent(-5f, 100f)!!, 0.01f)
         assertNull(ElevationTracker.gradePercent(1f, 0.5f))
     }
+
+    @Test
+    fun olsGradeMatchesConstantClimb() {
+        // +10% over 100 m, with a bit of altitude noise — OLS should stay near 10%
+        val points = (0..20).map { i ->
+            val d = i * 5f
+            val noise = if (i % 2 == 0) 0.3f else -0.2f
+            ElevationTracker.PathPoint(d, d * 0.10f + noise)
+        }
+        val grade = ElevationTracker.olsGradePercent(points)!!
+        assertEquals(10f, grade, 0.5f)
+    }
+
+    @Test
+    fun olsGradeDownhill() {
+        val points = listOf(
+            ElevationTracker.PathPoint(0f, 100f),
+            ElevationTracker.PathPoint(25f, 95f),
+            ElevationTracker.PathPoint(50f, 90f),
+            ElevationTracker.PathPoint(75f, 85f),
+            ElevationTracker.PathPoint(100f, 80f),
+        )
+        val grade = ElevationTracker.olsGradePercent(points)!!
+        assertEquals(-20f, grade, 0.2f)
+    }
+
+    @Test
+    fun olsNeedsEnoughPoints() {
+        assertNull(
+            ElevationTracker.olsGradePercent(
+                listOf(
+                    ElevationTracker.PathPoint(0f, 10f),
+                    ElevationTracker.PathPoint(10f, 11f),
+                ),
+            ),
+        )
+    }
 }
+

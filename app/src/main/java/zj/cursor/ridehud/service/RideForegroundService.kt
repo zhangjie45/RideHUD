@@ -126,15 +126,26 @@ class RideForegroundService : Service() {
 
         elapsedJob?.cancel()
         elapsedJob = scope.launch {
+            var lastTickElapsed = SystemClock.elapsedRealtime()
             while (isActive) {
+                val now = SystemClock.elapsedRealtime()
+                val dt = (now - lastTickElapsed).coerceIn(0L, 1_000L)
+                lastTickElapsed = now
                 if (!isPaused) {
-                    val elapsed = SystemClock.elapsedRealtime() - rideStartElapsedRealtime - pausedAccumulatedMs
+                    val elapsed = now - rideStartElapsedRealtime - pausedAccumulatedMs
                     RideSessionStore.updateMetrics {
+                        val moving = if (it.speedKmh >= zj.cursor.ridehud.domain.RideMetrics.MOVING_SPEED_KMH) {
+                            it.movingElapsedMs + dt
+                        } else {
+                            it.movingElapsedMs
+                        }
+                        val avgBasis = if (moving >= 1_000L) moving else elapsed
                         it.copy(
                             elapsedMs = elapsed,
+                            movingElapsedMs = moving,
                             avgSpeedKmh = zj.cursor.ridehud.domain.RideMetrics.averageSpeedKmh(
                                 it.distanceM,
-                                elapsed,
+                                avgBasis,
                             ),
                             isPaused = false,
                         )
@@ -241,14 +252,24 @@ class RideForegroundService : Service() {
                         elevationTracker.onLocation(location, sample.distanceM)
                     }
                     RideSessionStore.updateMetrics {
+                        val maxSpeed = if (sample.speedKmh in 0.5f..72f) {
+                            maxOf(it.maxSpeedKmh, sample.speedKmh)
+                        } else {
+                            it.maxSpeedKmh
+                        }
+                        val avgBasis = if (it.movingElapsedMs >= 1_000L) {
+                            it.movingElapsedMs
+                        } else {
+                            it.elapsedMs
+                        }
                         it.copy(
                             speedKmh = sample.speedKmh,
                             distanceM = sample.distanceM,
                             avgSpeedKmh = zj.cursor.ridehud.domain.RideMetrics.averageSpeedKmh(
                                 sample.distanceM,
-                                it.elapsedMs,
+                                avgBasis,
                             ),
-                            maxSpeedKmh = maxOf(it.maxSpeedKmh, sample.speedKmh),
+                            maxSpeedKmh = maxSpeed,
                         )
                     }
                 }
@@ -260,6 +281,8 @@ class RideForegroundService : Service() {
                     it.copy(
                         altitudeM = sample.altitudeM,
                         gradePercent = sample.gradePercent,
+                        elevationGainM = sample.elevationGainM,
+                        elevationLossM = sample.elevationLossM,
                         hasBarometer = sample.hasBarometer,
                     )
                 }

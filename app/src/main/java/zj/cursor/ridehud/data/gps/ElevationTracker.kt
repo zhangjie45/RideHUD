@@ -15,12 +15,20 @@ data class ElevationSample(
     val altitudeM: Float? = null,
     /** Grade percent, e.g. 5.2 means +5.2%. null until enough distance. */
     val gradePercent: Float? = null,
+    /** Cumulative ascent with OpenTracks-style hysteresis (meters). */
+    val elevationGainM: Float = 0f,
+    /** Cumulative descent with hysteresis (meters). */
+    val elevationLossM: Float = 0f,
     val hasBarometer: Boolean = false,
 )
 
 /**
- * Hybrid elevation: barometer for relative height (preferred) + GPS for absolute calibration.
- * Grade is climb/run over a short distance window.
+ * Hybrid elevation + grade for cycling HUD.
+ *
+ * Elevation: barometer relative height (preferred) + slow GPS absolute calibration.
+ * Grade: OLS slope of altitude vs distance over a rolling distance window
+ * (same idea as Barberfish / Garmin slope datafields — distance-based, not time-based
+ * endpoint deltas, which jitter badly with GPS/baro noise).
  */
 class ElevationTracker(context: Context) {
     private val sensorManager =
@@ -30,12 +38,18 @@ class ElevationTracker(context: Context) {
     private var running = false
     private var hasBarometer = pressureSensor != null
 
+    private var smoothedPressureHpa: Float? = null
     private var rawBaroAltitudeM: Float? = null
     private var altitudeOffsetM = 0f
     private var calibrated = false
     private var smoothedAltitudeM: Float? = null
     private var smoothedGradePercent = 0f
     private var hasGrade = false
+
+    /** OpenTracks: only count gain/loss after ±3 m from last committed anchor. */
+    private var gainAnchorAltitudeM: Float? = null
+    private var elevationGainM = 0f
+    private var elevationLossM = 0f
 
     private var lastDistanceM = 0f
     private val path = ArrayDeque<PathPoint>()
@@ -48,8 +62,13 @@ class ElevationTracker(context: Context) {
             if (!running || event.sensor.type != Sensor.TYPE_PRESSURE) return
             val pressureHpa = event.values[0]
             if (pressureHpa <= 0f) return
-            rawBaroAltitudeM = pressureToAltitudeM(pressureHpa)
-            publish()
+            // Smooth pressure first — raw baro at SENSOR_DELAY_UI is noisy for grade
+            smoothedPressureHpa = smoothedPressureHpa?.let {
+                PRESSURE_EMA * it + (1f - PRESSURE_EMA) * pressureHpa
+            } ?: pressureHpa
+            rawBaroAltitudeM = pressureToAltitudeM(smoothedPressureHpa!!)
+            ingestAltitude(rawBaroAltitudeM!! + altitudeOffsetM, gpsOnly = false)
+            publishAltitudeOnly()
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -59,12 +78,16 @@ class ElevationTracker(context: Context) {
         if (running) return
         running = true
         hasBarometer = pressureSensor != null
+        smoothedPressureHpa = null
         rawBaroAltitudeM = null
         altitudeOffsetM = 0f
         calibrated = false
         smoothedAltitudeM = null
         smoothedGradePercent = 0f
         hasGrade = false
+        gainAnchorAltitudeM = null
+        elevationGainM = 0f
+        elevationLossM = 0f
         lastDistanceM = 0f
         path.clear()
         latest = ElevationSample(hasBarometer = hasBarometer)
@@ -74,7 +97,8 @@ class ElevationTracker(context: Context) {
             sensorManager.registerListener(
                 pressureListener,
                 it,
-                SensorManager.SENSOR_DELAY_UI,
+                // ~5 Hz is enough; UI rate over-samples and adds jitter
+                SensorManager.SENSOR_DELAY_NORMAL,
             )
         }
     }
@@ -103,13 +127,16 @@ class ElevationTracker(context: Context) {
                         calibrated = true
                         targetOffset
                     } else {
-                        0.9f * altitudeOffsetM + 0.1f * targetOffset
+                        // Very slow GPS absolute drift correction (baro owns relative grade)
+                        0.97f * altitudeOffsetM + 0.03f * targetOffset
                     }
                 } else if (!hasBarometer) {
-                    updateSmoothedAltitude(gpsAltitude)
+                    ingestAltitude(gpsAltitude, gpsOnly = true)
                 }
-            } else if (!hasBarometer && location.accuracy <= 40f) {
-                updateSmoothedAltitude(gpsAltitude)
+            } else if (!hasBarometer && location.accuracy <= 35f) {
+                ingestAltitude(gpsAltitude, gpsOnly = true)
+            } else if (hasBarometer && rawBaroAltitudeM != null) {
+                ingestAltitude(rawBaroAltitudeM!! + altitudeOffsetM, gpsOnly = false)
             }
         }
 
@@ -117,20 +144,35 @@ class ElevationTracker(context: Context) {
         publish()
     }
 
-    private fun currentAltitudeM(): Float? {
-        val baro = rawBaroAltitudeM
-        return when {
-            baro != null -> {
-                val alt = baro + altitudeOffsetM
-                updateSmoothedAltitude(alt)
-                smoothedAltitudeM
-            }
-            else -> smoothedAltitudeM
-        }
+    private fun currentAltitudeM(): Float? = smoothedAltitudeM
+
+    private fun ingestAltitude(raw: Float, gpsOnly: Boolean) {
+        val alpha = if (gpsOnly) GPS_ALT_EMA else BARO_ALT_EMA
+        smoothedAltitudeM = smoothedAltitudeM?.let { alpha * it + (1f - alpha) * raw } ?: raw
+        updateElevationGainLoss(smoothedAltitudeM!!)
     }
 
-    private fun updateSmoothedAltitude(raw: Float) {
-        smoothedAltitudeM = smoothedAltitudeM?.let { 0.75f * it + 0.25f * raw } ?: raw
+    /**
+     * OpenTracks / cycling_analyzer style: ignore sub-threshold wobble;
+     * only commit climb/descent once altitude moves ≥ [GAIN_HYSTERESIS_M] from anchor.
+     */
+    private fun updateElevationGainLoss(smoothedAlt: Float) {
+        val anchor = gainAnchorAltitudeM
+        if (anchor == null) {
+            gainAnchorAltitudeM = smoothedAlt
+            return
+        }
+        val delta = smoothedAlt - anchor
+        when {
+            delta >= GAIN_HYSTERESIS_M -> {
+                elevationGainM += delta
+                gainAnchorAltitudeM = smoothedAlt
+            }
+            delta <= -GAIN_HYSTERESIS_M -> {
+                elevationLossM += -delta
+                gainAnchorAltitudeM = smoothedAlt
+            }
+        }
     }
 
     private fun updateGradePath(distanceM: Float) {
@@ -138,6 +180,11 @@ class ElevationTracker(context: Context) {
         if (distanceM + 0.5f < lastDistanceM) {
             path.clear()
             lastDistanceM = distanceM
+            hasGrade = false
+            return
+        }
+        // Nearly stopped: freeze grade path growth so OLS doesn't go wild on altitude noise
+        if (path.isNotEmpty() && distanceM - lastDistanceM < 0.3f) {
             return
         }
         lastDistanceM = distanceM
@@ -150,24 +197,33 @@ class ElevationTracker(context: Context) {
             path.addLast(PathPoint(distanceM, altitude))
         }
 
-        while (path.size > 1 && distanceM - path.first().distanceM > GRADE_WINDOW_M * 2) {
+        while (path.size > 1 && distanceM - path.first().distanceM > GRADE_WINDOW_M) {
             path.removeFirst()
         }
 
-        val oldest = path.firstOrNull() ?: return
-        val window = distanceM - oldest.distanceM
-        if (window < GRADE_WINDOW_M) return
+        val window = distanceM - (path.firstOrNull()?.distanceM ?: distanceM)
+        if (window < MIN_GRADE_WINDOW_M || path.size < MIN_GRADE_POINTS) return
 
-        val rise = altitude - oldest.altitudeM
-        val rawGrade = (rise / window) * 100f
-        if (abs(rawGrade) > MAX_GRADE_PERCENT) return
+        val ols = olsGradePercent(path) ?: return
+        if (abs(ols) > MAX_GRADE_PERCENT) return
 
         smoothedGradePercent = if (!hasGrade) {
             hasGrade = true
-            rawGrade
+            ols
         } else {
-            0.7f * smoothedGradePercent + 0.3f * rawGrade
+            GRADE_EMA * smoothedGradePercent + (1f - GRADE_EMA) * ols
         }
+    }
+
+    private fun publishAltitudeOnly() {
+        val altitude = currentAltitudeM()
+        latest = latest.copy(
+            altitudeM = altitude,
+            elevationGainM = elevationGainM,
+            elevationLossM = elevationLossM,
+            hasBarometer = hasBarometer,
+        )
+        onSample?.invoke(latest)
     }
 
     private fun publish() {
@@ -175,16 +231,28 @@ class ElevationTracker(context: Context) {
         latest = ElevationSample(
             altitudeM = altitude,
             gradePercent = if (hasGrade) smoothedGradePercent else null,
+            elevationGainM = elevationGainM,
+            elevationLossM = elevationLossM,
             hasBarometer = hasBarometer,
         )
         onSample?.invoke(latest)
     }
 
     companion object {
-        private const val GRADE_WINDOW_M = 25f
-        private const val MIN_POINT_SPACING_M = 3f
-        private const val MAX_GRADE_PERCENT = 35f
+        /** Barberfish uses ~30 m OLS window; slightly longer for phone GPS noise. */
+        private const val GRADE_WINDOW_M = 40f
+        private const val MIN_GRADE_WINDOW_M = 20f
+        private const val MIN_POINT_SPACING_M = 4f
+        private const val MIN_GRADE_POINTS = 4
+        private const val MAX_GRADE_PERCENT = 30f
+        /** OpenTracks default hysteresis for ascent/descent counting. */
+        private const val GAIN_HYSTERESIS_M = 3f
         private const val SEA_LEVEL_PRESSURE_HPA = 1013.25f
+
+        private const val PRESSURE_EMA = 0.88f
+        private const val BARO_ALT_EMA = 0.82f
+        private const val GPS_ALT_EMA = 0.92f
+        private const val GRADE_EMA = 0.78f
 
         fun pressureToAltitudeM(pressureHpa: Float): Float {
             return (44330f * (1f - (pressureHpa / SEA_LEVEL_PRESSURE_HPA).toDouble().pow(1.0 / 5.255)))
@@ -196,11 +264,38 @@ class ElevationTracker(context: Context) {
             return (riseM / runM) * 100f
         }
 
+        /**
+         * Ordinary least-squares slope of altitude (y) vs distance (x), as percent grade.
+         * More stable than endpoint rise/run over the same window.
+         */
+        fun olsGradePercent(points: List<PathPoint>): Float? {
+            if (points.size < 3) return null
+            val n = points.size.toDouble()
+            var sumX = 0.0
+            var sumY = 0.0
+            var sumXX = 0.0
+            var sumXY = 0.0
+            for (p in points) {
+                val x = p.distanceM.toDouble()
+                val y = p.altitudeM.toDouble()
+                sumX += x
+                sumY += y
+                sumXX += x * x
+                sumXY += x * y
+            }
+            val denom = n * sumXX - sumX * sumX
+            if (abs(denom) < 1e-6) return null
+            val slope = (n * sumXY - sumX * sumY) / denom
+            val grade = (slope * 100.0).toFloat()
+            if (!grade.isFinite()) return null
+            return grade
+        }
+
         private fun verticalAccuracyOk(location: Location): Boolean {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
             return !location.hasVerticalAccuracy() || location.verticalAccuracyMeters <= 20f
         }
     }
 
-    private data class PathPoint(val distanceM: Float, val altitudeM: Float)
+    data class PathPoint(val distanceM: Float, val altitudeM: Float)
 }

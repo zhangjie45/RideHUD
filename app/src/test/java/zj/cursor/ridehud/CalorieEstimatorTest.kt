@@ -22,6 +22,6 @@ class CalorieEstimatorTest {
 
     @Test
     fun formulaVersionIsStable() {
-        assertEquals("ridehud-v1-met-grade-hr", CalorieEstimator.FORMULA_VERSION)
+        assertEquals("ridehud-v2-met-grade-hr-moving", CalorieEstimator.FORMULA_VERSION)
     }
 }

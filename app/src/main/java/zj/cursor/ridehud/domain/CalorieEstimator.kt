@@ -7,7 +7,7 @@ package zj.cursor.ridehud.domain
  * Export every ride with [FORMULA_VERSION] so we can recompute after tuning.
  */
 object CalorieEstimator {
-    const val FORMULA_VERSION = "ridehud-v1-met-grade-hr"
+    const val FORMULA_VERSION = "ridehud-v2-met-grade-hr-moving"
 
     /**
      * Instantaneous metabolic kilocalories per second.
@@ -20,6 +20,10 @@ object CalorieEstimator {
     ): Double {
         if (weightKg <= 0f) return 0.0
         val movingSpeed = speedKmh.coerceAtLeast(0f)
+        // Below moving threshold: idle MET only (don't inflate with grade/HR while stopped)
+        if (movingSpeed < RideMetrics.MOVING_SPEED_KMH) {
+            return metForSpeedKmh(movingSpeed) * 3.5 * weightKg / 200.0 / 60.0
+        }
         var met = metForSpeedKmh(movingSpeed) * gradeFactor(gradePercent)
         met *= heartRateFactor(heartRateBpm, movingSpeed).toFloat()
         // ACSM: kcal/min = MET × 3.5 × bodyMassKg / 200
@@ -27,7 +31,7 @@ object CalorieEstimator {
     }
 
     fun metForSpeedKmh(speedKmh: Float): Float = when {
-        speedKmh < 1.5f -> 1.8f // nearly stopped / coasting idle
+        speedKmh < RideMetrics.MOVING_SPEED_KMH -> 1.8f // stopped / waiting
         speedKmh < 16f -> 4.0f
         speedKmh < 19f -> 6.8f
         speedKmh < 22f -> 8.0f

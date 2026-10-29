@@ -50,6 +50,10 @@ class BleHrClient(
     private val _heartRateBpm = MutableStateFlow<Int?>(null)
     val heartRateBpm: StateFlow<Int?> = _heartRateBpm.asStateFlow()
 
+    /** Median + EMA for HUD (HeartRate_Monitor / thud-style display smoothing). */
+    private val hrWindow = ArrayDeque<Int>(HR_MEDIAN_WINDOW)
+    private var smoothedHr = 0f
+
     private val _scannedDevices = MutableStateFlow<List<ScannedHrDevice>>(emptyList())
     val scannedDevices: StateFlow<List<ScannedHrDevice>> = _scannedDevices.asStateFlow()
 
@@ -133,8 +137,28 @@ class BleHrClient(
         targetAddress = null
         stopScan()
         closeGatt()
-        _heartRateBpm.value = null
+        resetHeartRateFilter()
         _connectionState.value = HrConnectionState.Disconnected
+    }
+
+    private fun resetHeartRateFilter() {
+        hrWindow.clear()
+        smoothedHr = 0f
+        _heartRateBpm.value = null
+    }
+
+    private fun publishSmoothedHeartRate(rawBpm: Int) {
+        if (rawBpm !in HR_MIN..HR_MAX) return
+        hrWindow.addLast(rawBpm)
+        while (hrWindow.size > HR_MEDIAN_WINDOW) hrWindow.removeFirst()
+        val sorted = hrWindow.sorted()
+        val median = sorted[sorted.size / 2]
+        smoothedHr = if (smoothedHr <= 1f) {
+            median.toFloat()
+        } else {
+            HR_EMA * median + (1f - HR_EMA) * smoothedHr
+        }
+        _heartRateBpm.value = smoothedHr.toInt().coerceIn(HR_MIN, HR_MAX)
     }
 
     @SuppressLint("MissingPermission")
@@ -261,7 +285,7 @@ class BleHrClient(
 
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.w(TAG, "GATT disconnected status=$status")
-                    _heartRateBpm.value = null
+                    resetHeartRateFilter()
                     closeGatt()
                     if (autoReconnect) {
                         scheduleReconnect()
@@ -329,7 +353,7 @@ class BleHrClient(
         ) {
             if (characteristic.uuid == HR_MEASUREMENT_UUID) {
                 parseHeartRate(characteristic.value)?.let { bpm ->
-                    _heartRateBpm.value = bpm
+                    publishSmoothedHeartRate(bpm)
                     if (_connectionState.value != HrConnectionState.Connected) {
                         _connectionState.value = HrConnectionState.Connected
                     }
@@ -344,7 +368,7 @@ class BleHrClient(
         ) {
             if (characteristic.uuid == HR_MEASUREMENT_UUID) {
                 parseHeartRate(value)?.let { bpm ->
-                    _heartRateBpm.value = bpm
+                    publishSmoothedHeartRate(bpm)
                     if (_connectionState.value != HrConnectionState.Connected) {
                         _connectionState.value = HrConnectionState.Connected
                     }
@@ -355,6 +379,10 @@ class BleHrClient(
 
     companion object {
         private const val TAG = "BleHrClient"
+        private const val HR_MIN = 35
+        private const val HR_MAX = 220
+        private const val HR_MEDIAN_WINDOW = 5
+        private const val HR_EMA = 0.35f
         val HR_SERVICE_UUID: UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
         val HR_MEASUREMENT_UUID: UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")

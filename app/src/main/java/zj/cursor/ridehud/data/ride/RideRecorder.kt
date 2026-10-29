@@ -9,16 +9,19 @@ import kotlin.math.max
 
 /**
  * Samples live metrics during a ride and builds a [RideRecord] on finish.
+ *
+ * Max-speed / elevation / avg use the same filtering ideas as OpenTracks & cycling_analyzer:
+ * reject implausible peaks, prefer moving-time average, use hysteresis gain from ElevationTracker.
  */
 class RideRecorder {
     private var startEpochMs = 0L
     private var weightKg = 70f
     private var calories = 0.0
     private var maxSpeed = 0f
+    private val recentSpeeds = ArrayDeque<Float>(3)
     private var maxHr: Int? = null
     private var hrSum = 0.0
     private var hrCount = 0
-    private var lastAltitude: Float? = null
     private var elevationGain = 0f
     private var elevationLoss = 0f
     private var minAltitude: Float? = null
@@ -32,10 +35,10 @@ class RideRecorder {
         this.startEpochMs = startEpochMs
         calories = 0.0
         maxSpeed = 0f
+        recentSpeeds.clear()
         maxHr = null
         hrSum = 0.0
         hrCount = 0
-        lastAltitude = null
         elevationGain = 0f
         elevationLoss = 0f
         minAltitude = null
@@ -59,20 +62,27 @@ class RideRecorder {
         )
         calories += kcalRate * dtSec
 
-        maxSpeed = max(maxSpeed, metrics.speedKmh)
-        metrics.heartRateBpm?.let { hr ->
-            hrSum += hr
-            hrCount++
-            maxHr = maxOf(maxHr ?: hr, hr)
+        // cycling_analyzer: max of short moving average, reject absurd peaks
+        recentSpeeds.addLast(metrics.speedKmh)
+        while (recentSpeeds.size > 3) recentSpeeds.removeFirst()
+        val windowAvg = recentSpeeds.average().toFloat()
+        if (windowAvg in 0.5f..MAX_PLAUSIBLE_SPEED_KMH) {
+            maxSpeed = max(maxSpeed, windowAvg)
         }
 
-        metrics.altitudeM?.let { alt ->
-            lastAltitude?.let { prev ->
-                val delta = alt - prev
-                if (delta > 0.3f) elevationGain += delta
-                if (delta < -0.3f) elevationLoss += -delta
+        metrics.heartRateBpm?.let { hr ->
+            if (hr in 35..220) {
+                hrSum += hr
+                hrCount++
+                maxHr = maxOf(maxHr ?: hr, hr)
             }
-            lastAltitude = alt
+        }
+
+        // Prefer OpenTracks-style gain from ElevationTracker when present
+        elevationGain = max(elevationGain, metrics.elevationGainM)
+        elevationLoss = max(elevationLoss, metrics.elevationLossM)
+
+        metrics.altitudeM?.let { alt ->
             minAltitude = minOf(minAltitude ?: alt, alt)
             maxAltitude = maxOf(maxAltitude ?: alt, alt)
         }
@@ -98,7 +108,6 @@ class RideRecorder {
     fun finish(metrics: RideMetrics, endEpochMs: Long = System.currentTimeMillis()): RideRecord? {
         if (!active) return null
         active = false
-        // Ensure final point captured
         if (points.isEmpty() || points.last().elapsedMs != metrics.elapsedMs) {
             points += RideTrackPoint(
                 elapsedMs = metrics.elapsedMs,
@@ -112,10 +121,14 @@ class RideRecorder {
             )
         }
 
+        elevationGain = max(elevationGain, metrics.elevationGainM)
+        elevationLoss = max(elevationLoss, metrics.elevationLossM)
+
         val elapsedMs = metrics.elapsedMs.coerceAtLeast(0L)
+        val movingMs = metrics.movingElapsedMs.coerceAtLeast(0L)
         val distanceM = metrics.distanceM.coerceAtLeast(0f)
-        val hours = elapsedMs / 3_600_000.0
-        val avgSpeed = if (hours > 0) (distanceM / 1000.0 / hours).toFloat() else 0f
+        val avgBasisMs = if (movingMs >= 1_000L) movingMs else elapsedMs
+        val avgSpeed = RideMetrics.averageSpeedKmh(distanceM, avgBasisMs)
 
         return RideRecord(
             id = UUID.randomUUID().toString(),
@@ -140,5 +153,6 @@ class RideRecorder {
 
     companion object {
         private const val SAMPLE_INTERVAL_MS = 1_000L
+        private const val MAX_PLAUSIBLE_SPEED_KMH = 72f
     }
 }
