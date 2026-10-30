@@ -8,25 +8,8 @@
 
 ## UI 预览
 
-静态截图（与仓库内 HTML 预览一致）：
-
-![RideHUD UI Preview](docs/images/ui-preview-full.png)
-
-### 交互预览
-
-本地打开（推荐，数据会动）：
-
-```bash
-open preview/ridehud-ui.html
-```
-
-或直接点开仓库文件：[`preview/ridehud-ui.html`](preview/ridehud-ui.html)
-
-推送到 GitHub 后，也可用在线预览（无需克隆）：
-
-- [htmlpreview · ridehud-ui.html](https://htmlpreview.github.io/?https://github.com/zhangjie45/RideHUD/blob/main/preview/ridehud-ui.html)
-
-预览覆盖四屏：**连接 / HUD / 记录 / 详情**（速度环、爬升·下降·净变化、运动时间与总热量等与当前 App 对齐）。
+- 本地：[`preview/ridehud-ui.html`](preview/ridehud-ui.html)（或 `open preview/ridehud-ui.html`）
+- 在线：[htmlpreview · RideHUD UI](https://htmlpreview.github.io/?https://github.com/zhangjie45/RideHUD/blob/main/preview/ridehud-ui.html)
 
 ---
 
@@ -81,13 +64,6 @@ app/src/main/java/zj/cursor/ridehud/
 - 蓝牙扫描与连接（Android 12+：`BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`）  
 - 前台服务（定位 + 已连接设备）  
 - 通知（前台骑行通知）
-
----
-
-## 文档
-
-- [`docs/rea-watch-metrics-brief.md`](docs/rea-watch-metrics-brief.md) — 手表侧指标对照简报  
-- [`docs/rea-metric-evidence.md`](docs/rea-metric-evidence.md) — 指标算法证据摘录  
 
 ---
 

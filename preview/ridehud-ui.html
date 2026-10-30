@@ -40,16 +40,10 @@
     }
 
     h1 {
-      margin: 0 0 8px;
+      margin: 0 0 28px;
       font-size: 22px;
       letter-spacing: 0.04em;
-    }
-    .intro {
-      margin: 0 0 28px;
-      color: var(--muted);
-      font-size: 14px;
-      max-width: 720px;
-      line-height: 1.5;
+      text-align: center;
     }
 
     .gallery {
@@ -441,28 +435,10 @@
       width: 8px; height: 8px; border-radius: 50%; display: inline-block;
     }
 
-    .note {
-      margin-top: 36px;
-      max-width: 1100px;
-      margin-left: auto;
-      margin-right: auto;
-      padding: 16px 18px;
-      border-radius: 14px;
-      background: rgba(22, 32, 41, 0.7);
-      border: 1px solid rgba(61, 78, 92, 0.45);
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-    }
-    .note strong { color: var(--ink); font-weight: 600; }
   </style>
 </head>
 <body>
-  <h1>RideHUD · 当前 UI 预览</h1>
-  <p class="intro">
-    按当前 Compose 实现还原：连接页 / 骑行 HUD（含爬升·下降·净变化）/ 记录列表 + 详情（运动时间、总时长、活动热量等）。
-    配色取自 M3 neon 主题。用浏览器打开本文件即可对照。
-  </p>
+  <h1>RideHUD</h1>
 
   <div class="gallery">
     <!-- CONNECT -->
@@ -740,12 +716,6 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <div class="note">
-    <strong>对照说明：</strong>
-    HUD：车速环 → 心率 | 运动时间 → 三行指标（距离/均速/总热量 · 海拔/坡度/峰值速 · 爬升/下降/净变化）→ 暂停/结束。
-    详情：运动时间与总时长分开；总热量/活动热量；累积爬升/下降。速度预览按轻 EMA 跟手跳动（非一秒一格）。
   </div>
 
   <script>
