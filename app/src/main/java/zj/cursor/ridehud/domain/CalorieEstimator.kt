@@ -1,58 +1,93 @@
 package zj.cursor.ridehud.domain
 
 /**
- * Cycling calorie estimator (versioned for later calibration against watch data).
+ * Cycling calorie estimator aligned with Huawei Health REA notes.
  *
- * Base: Compendium MET × ACSM kcal/min formula, adjusted by grade and optional HR.
- * Export every ride with [FORMULA_VERSION] so we can recompute after tuning.
+ * Phone outdoor bike (sport 259) with watch: Health only **passthrough** — we cannot.
+ * Phone-side formulas recovered from APK / native:
+ * - **Realtime**: TruSport EE `CyclingSpeedScaling` quadratic (§11.5 `libtrusport_ee.so`)
+ * - **Idle / rest**: sit rate from ActiveCalorie path `(weight * 0.02171) / 60` kcal/s (§11.3)
+ * - **Manual ACSM**: `MET=8` → `(8 * 3.5 * minutes * kg) / 200` (§11.4) — available as helper
+ *
+ * Evidence: docs/rea-huawei-health-evidence.md §11
  */
 object CalorieEstimator {
-    const val FORMULA_VERSION = "ridehud-v2-met-grade-hr-moving"
+    const val FORMULA_VERSION = "ridehud-v3-trusport-ee-bike"
 
     /**
-     * Instantaneous metabolic kilocalories per second.
+     * Instantaneous **total** metabolic kilocalories per second.
      */
     fun kcalPerSecond(
         weightKg: Float,
         speedKmh: Float,
-        gradePercent: Float?,
-        heartRateBpm: Int?,
+        gradePercent: Float? = null,
+        heartRateBpm: Int? = null,
     ): Double {
         if (weightKg <= 0f) return 0.0
         val movingSpeed = speedKmh.coerceAtLeast(0f)
-        // Below moving threshold: idle MET only (don't inflate with grade/HR while stopped)
         if (movingSpeed < RideMetrics.MOVING_SPEED_KMH) {
-            return metForSpeedKmh(movingSpeed) * 3.5 * weightKg / 200.0 / 60.0
+            return restKcalPerSecond(weightKg)
         }
-        var met = metForSpeedKmh(movingSpeed) * gradeFactor(gradePercent)
-        met *= heartRateFactor(heartRateBpm, movingSpeed).toFloat()
-        // ACSM: kcal/min = MET × 3.5 × bodyMassKg / 200
-        return met * 3.5 * weightKg / 200.0 / 60.0
-    }
-
-    fun metForSpeedKmh(speedKmh: Float): Float = when {
-        speedKmh < RideMetrics.MOVING_SPEED_KMH -> 1.8f // stopped / waiting
-        speedKmh < 16f -> 4.0f
-        speedKmh < 19f -> 6.8f
-        speedKmh < 22f -> 8.0f
-        speedKmh < 25f -> 10.0f
-        speedKmh < 30f -> 12.0f
-        else -> 15.8f
-    }
-
-    fun gradeFactor(gradePercent: Float?): Float {
-        val g = (gradePercent ?: 0f).coerceIn(-15f, 20f)
-        // Uphill costs more; downhill less but not below ~70%
-        return (1f + g / 100f * 2.5f).coerceIn(0.7f, 1.8f)
+        // TruSport path has no grade/HR in the recovered native sample push.
+        // Keep unused params for call-site compatibility / future watch passthrough.
+        @Suppress("UNUSED_PARAMETER")
+        val ignoredGrade = gradePercent
+        @Suppress("UNUSED_PARAMETER")
+        val ignoredHr = heartRateBpm
+        return truSportEeKcalPerSecond(weightKg, movingSpeed)
     }
 
     /**
-     * Mild HR nudge when heart rate is available; disabled when nearly stopped.
+     * Instantaneous **active** kcal/s = max(total − rest, 0)
+     * (same split idea as ActiveCalorieAlgorithmSource for skip).
      */
-    fun heartRateFactor(heartRateBpm: Int?, speedKmh: Float): Double {
-        if (heartRateBpm == null || speedKmh < 3f) return 1.0
-        val hr = heartRateBpm.coerceIn(60, 200)
-        // Around 100 bpm ~ baseline; 180 bpm ~ +15%
-        return 1.0 + ((hr - 100).coerceAtLeast(0) / 80.0) * 0.15
+    fun activeKcalPerSecond(
+        weightKg: Float,
+        speedKmh: Float,
+        gradePercent: Float? = null,
+        heartRateBpm: Int? = null,
+    ): Double {
+        val total = kcalPerSecond(weightKg, speedKmh, gradePercent, heartRateBpm)
+        val rest = restKcalPerSecond(weightKg)
+        return (total - rest).coerceAtLeast(0.0)
+    }
+
+    /** §11.3 sit/rest component. */
+    fun restKcalPerSecond(weightKg: Float): Double {
+        if (weightKg <= 0f) return 0.0
+        return weightKg * HuaweiHealthRideDefaults.SIT_REST_KCAL_PER_KG_PER_MIN / 60.0
+    }
+
+    /**
+     * §11.5 TruSport EE cycling (speed capped at 6 m/s).
+     *
+     * ```
+     * poly = a*v² + b*v + c
+     * kcal/s = poly * 3.5 * weight / 12000
+     * ```
+     * (= ACSM form with MET := poly).
+     */
+    fun truSportEeKcalPerSecond(weightKg: Float, speedKmh: Float): Double {
+        val v = (speedKmh / 3.6f).coerceIn(0f, HuaweiHealthRideDefaults.TRUSPORT_SPEED_CAP_MPS)
+        val a = HuaweiHealthRideDefaults.CYCLING_SPEED_SCALING_A
+        val b = HuaweiHealthRideDefaults.CYCLING_SPEED_SCALING_B
+        val c = HuaweiHealthRideDefaults.CYCLING_SPEED_SCALING_C
+        val poly = a * v * v + b * v + c
+        return poly * 3.5 * weightKg / 12_000.0
+    }
+
+    /** §11.4 manual history ACSM with SportTypeConfig mets=8. */
+    fun acsmBikeKcal(weightKg: Float, durationMs: Long, met: Float = HuaweiHealthRideDefaults.BIKE_METS): Float {
+        if (weightKg <= 0f || durationMs <= 0L) return 0f
+        val minutes = durationMs / 60_000.0
+        return ((met * 3.5 * minutes * weightKg) / 200.0).toFloat()
+    }
+
+    fun cyclingSpeedScalingMet(speedKmh: Float): Float {
+        val v = (speedKmh / 3.6f).coerceIn(0f, HuaweiHealthRideDefaults.TRUSPORT_SPEED_CAP_MPS)
+        val a = HuaweiHealthRideDefaults.CYCLING_SPEED_SCALING_A
+        val b = HuaweiHealthRideDefaults.CYCLING_SPEED_SCALING_B
+        val c = HuaweiHealthRideDefaults.CYCLING_SPEED_SCALING_C
+        return a * v * v + b * v + c
     }
 }

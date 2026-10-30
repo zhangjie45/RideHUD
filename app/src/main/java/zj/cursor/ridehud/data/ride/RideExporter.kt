@@ -57,6 +57,7 @@ class RideExporter(private val context: Context) {
         sb.appendLine("# startEpochMs,${record.startEpochMs}")
         sb.appendLine("# endEpochMs,${record.endEpochMs}")
         sb.appendLine("# elapsedMs,${record.elapsedMs}")
+        sb.appendLine("# totalElapsedMs,${record.totalElapsedMs}")
         sb.appendLine("# distanceM,${record.distanceM}")
         sb.appendLine("# caloriesKcal,${record.caloriesKcal}")
         sb.appendLine("# watchCaloriesKcal,${record.watchCaloriesKcal ?: ""}")

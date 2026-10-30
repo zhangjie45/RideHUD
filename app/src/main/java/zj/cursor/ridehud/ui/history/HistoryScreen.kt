@@ -420,11 +420,28 @@ private fun DetailContent(
                     fontWeight = FontWeight.Bold,
                 )
                 Metric(stringResource(R.string.duration), formatDuration(record.elapsedMs))
+                Metric(
+                    stringResource(R.string.total_duration),
+                    formatDuration(
+                        if (record.totalElapsedMs > 0L) record.totalElapsedMs else record.elapsedMs,
+                    ),
+                )
                 Metric(stringResource(R.string.distance_label), String.format(Locale.US, "%.2f km", record.distanceM / 1000f))
                 Metric(stringResource(R.string.calories_label), String.format(Locale.US, "%.0f kcal", record.caloriesKcal))
+                Metric(
+                    stringResource(R.string.active_calories_label),
+                    String.format(Locale.US, "%.0f kcal", record.activeCaloriesKcal),
+                )
                 Metric(stringResource(R.string.avg_speed), String.format(Locale.US, "%.1f km/h", record.avgSpeedKmh))
                 Metric(stringResource(R.string.max_speed), String.format(Locale.US, "%.1f km/h", record.maxSpeedKmh))
-                Metric(stringResource(R.string.elevation_gain), String.format(Locale.US, "%.0f m", record.elevationGainM))
+                Metric(
+                    stringResource(R.string.elevation_gain),
+                    String.format(Locale.US, "%.1f m", record.elevationGainM),
+                )
+                Metric(
+                    stringResource(R.string.elevation_loss),
+                    String.format(Locale.US, "%.1f m", record.elevationLossM),
+                )
             }
         }
 

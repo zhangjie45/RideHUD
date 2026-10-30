@@ -7,7 +7,10 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
 import android.os.Build
+import android.os.SystemClock
+import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.pow
 
 data class ElevationSample(
@@ -15,9 +18,9 @@ data class ElevationSample(
     val altitudeM: Float? = null,
     /** Grade percent, e.g. 5.2 means +5.2%. null until enough distance. */
     val gradePercent: Float? = null,
-    /** Cumulative ascent with OpenTracks-style hysteresis (meters). */
+    /** Cumulative ascent (Huawei creeping-wave / OpenTracks hysteresis). */
     val elevationGainM: Float = 0f,
-    /** Cumulative descent with hysteresis (meters). */
+    /** Cumulative descent. */
     val elevationLossM: Float = 0f,
     val hasBarometer: Boolean = false,
 )
@@ -46,13 +49,21 @@ class ElevationTracker(context: Context) {
     private var smoothedGradePercent = 0f
     private var hasGrade = false
 
-    /** OpenTracks: only count gain/loss after ±3 m from last committed anchor. */
-    private var gainAnchorAltitudeM: Float? = null
+    /** Extreme altitude of current creeping-wave leg (Huawei TrackAltitudeMgr style). */
+    private var waveExtremeM: Float? = null
+    /** 0 unknown, +1 ascending, -1 descending. */
+    private var waveDirection = 0
     private var elevationGainM = 0f
     private var elevationLossM = 0f
+    /** Updated from [onLocation]; barometer samples honor the same gate. */
+    private var movingForGainLoss = false
+    private var usingGpsOnlyAltitude = false
 
     private var lastDistanceM = 0f
     private val path = ArrayDeque<PathPoint>()
+    /** Huawei SlopeLinkage: buffer of N OLS samples, flush ~1 s as rounded avg %. */
+    private val slopeBuffer = ArrayDeque<Float>(HuaweiHealthRideDefaults.SLOPE_BUFFER_N)
+    private var lastSlopeFlushElapsedMs = 0L
 
     private var latest = ElevationSample(hasBarometer = hasBarometer)
     var onSample: ((ElevationSample) -> Unit)? = null
@@ -62,11 +73,13 @@ class ElevationTracker(context: Context) {
             if (!running || event.sensor.type != Sensor.TYPE_PRESSURE) return
             val pressureHpa = event.values[0]
             if (pressureHpa <= 0f) return
-            // Smooth pressure first — raw baro at SENSOR_DELAY_UI is noisy for grade
+            // Smooth pressure first — raw baro is noisy for grade; first sample paints immediately
             smoothedPressureHpa = smoothedPressureHpa?.let {
                 PRESSURE_EMA * it + (1f - PRESSURE_EMA) * pressureHpa
             } ?: pressureHpa
             rawBaroAltitudeM = pressureToAltitudeM(smoothedPressureHpa!!)
+            usingGpsOnlyAltitude = false
+            // Same as pre-opt: show baro (+ GPS offset once calibrated) without waiting for GPS
             ingestAltitude(rawBaroAltitudeM!! + altitudeOffsetM, gpsOnly = false)
             publishAltitudeOnly()
         }
@@ -85,11 +98,16 @@ class ElevationTracker(context: Context) {
         smoothedAltitudeM = null
         smoothedGradePercent = 0f
         hasGrade = false
-        gainAnchorAltitudeM = null
+        waveExtremeM = null
+        waveDirection = 0
         elevationGainM = 0f
         elevationLossM = 0f
+        movingForGainLoss = false
+        usingGpsOnlyAltitude = !hasBarometer
         lastDistanceM = 0f
         path.clear()
+        slopeBuffer.clear()
+        lastSlopeFlushElapsedMs = 0L
         latest = ElevationSample(hasBarometer = hasBarometer)
         onSample?.invoke(latest)
 
@@ -97,8 +115,8 @@ class ElevationTracker(context: Context) {
             sensorManager.registerListener(
                 pressureListener,
                 it,
-                // ~5 Hz is enough; UI rate over-samples and adds jitter
-                SensorManager.SENSOR_DELAY_NORMAL,
+                // UI rate for fast first paint; pressure EMA still kills grade jitter
+                SensorManager.SENSOR_DELAY_UI,
             )
         }
     }
@@ -110,15 +128,29 @@ class ElevationTracker(context: Context) {
         }
     }
 
+    /** When ride is paused, freeze gain/loss and follow altitude as the new extreme. */
+    fun setMovingForGainLoss(moving: Boolean) {
+        movingForGainLoss = moving
+        if (!moving) {
+            waveExtremeM = smoothedAltitudeM
+            waveDirection = 0
+        }
+    }
+
     /**
      * Feed GPS/location updates for absolute calibration and grade path.
+     *
+     * @param speedKmh display speed; when nearly stopped, gain/loss freeze and the
+     *   anchor follows altitude so parking-lot baro noise isn't counted as climb.
      */
-    fun onLocation(location: Location, distanceM: Float) {
+    fun onLocation(location: Location, distanceM: Float, speedKmh: Float = 0f) {
         if (!running) return
+        movingForGainLoss = speedKmh >= HuaweiHealthRideDefaults.bikePauseEnterKmh
 
         val gpsAltitude = if (location.hasAltitude()) location.altitude.toFloat() else null
         if (gpsAltitude != null) {
-            val gpsOk = location.accuracy in 0f..25f && verticalAccuracyOk(location)
+            val accuracy = if (location.hasAccuracy()) location.accuracy else Float.MAX_VALUE
+            val gpsOk = accuracy in 0f..25f && verticalAccuracyOk(location)
             if (gpsOk) {
                 val baro = rawBaroAltitudeM
                 if (baro != null) {
@@ -130,16 +162,22 @@ class ElevationTracker(context: Context) {
                         // Very slow GPS absolute drift correction (baro owns relative grade)
                         0.97f * altitudeOffsetM + 0.03f * targetOffset
                     }
-                } else if (!hasBarometer) {
+                    usingGpsOnlyAltitude = false
+                    ingestAltitude(baro + altitudeOffsetM, gpsOnly = false)
+                } else {
+                    usingGpsOnlyAltitude = true
                     ingestAltitude(gpsAltitude, gpsOnly = true)
                 }
-            } else if (!hasBarometer && location.accuracy <= 35f) {
+            } else if (!hasBarometer && accuracy <= ALTITUDE_DISPLAY_ACCURACY_M) {
+                usingGpsOnlyAltitude = true
                 ingestAltitude(gpsAltitude, gpsOnly = true)
             } else if (hasBarometer && rawBaroAltitudeM != null) {
+                usingGpsOnlyAltitude = false
                 ingestAltitude(rawBaroAltitudeM!! + altitudeOffsetM, gpsOnly = false)
             }
         }
 
+        // Grade stays distance-based; network/coarse fixes won't grow distance so path freezes
         updateGradePath(distanceM)
         publish()
     }
@@ -153,26 +191,37 @@ class ElevationTracker(context: Context) {
     }
 
     /**
-     * OpenTracks / cycling_analyzer style: ignore sub-threshold wobble;
-     * only commit climb/descent once altitude moves ≥ [GAIN_HYSTERESIS_M] from anchor.
+     * Huawei [TrackAltitudeMgr] creeping-wave (threshold 0.6 m on baro path).
+     * GPS-only uses a larger threshold (3 m) — phone GNSS vertical noise is worse than baro.
+     * While stopped, slide the extreme with altitude (no accumulate).
      */
     private fun updateElevationGainLoss(smoothedAlt: Float) {
-        val anchor = gainAnchorAltitudeM
-        if (anchor == null) {
-            gainAnchorAltitudeM = smoothedAlt
+        val thr = if (usingGpsOnlyAltitude || !hasBarometer) {
+            HuaweiHealthRideDefaults.ALTITUDE_GPS_HYSTERESIS_M
+        } else {
+            HuaweiHealthRideDefaults.ALTITUDE_NOISE_M
+        }
+        val extreme = waveExtremeM
+        if (extreme == null) {
+            waveExtremeM = smoothedAlt
+            waveDirection = 0
             return
         }
-        val delta = smoothedAlt - anchor
-        when {
-            delta >= GAIN_HYSTERESIS_M -> {
-                elevationGainM += delta
-                gainAnchorAltitudeM = smoothedAlt
-            }
-            delta <= -GAIN_HYSTERESIS_M -> {
-                elevationLossM += -delta
-                gainAnchorAltitudeM = smoothedAlt
-            }
+        if (!movingForGainLoss) {
+            waveExtremeM = smoothedAlt
+            waveDirection = 0
+            return
         }
+        val result = creepingWaveStep(
+            altitudeM = smoothedAlt,
+            extremeM = extreme,
+            direction = waveDirection,
+            thresholdM = thr,
+        )
+        elevationGainM += result.gainDeltaM
+        elevationLossM += result.lossDeltaM
+        waveExtremeM = result.extremeM
+        waveDirection = result.direction
     }
 
     private fun updateGradePath(distanceM: Float) {
@@ -205,14 +254,25 @@ class ElevationTracker(context: Context) {
         if (window < MIN_GRADE_WINDOW_M || path.size < MIN_GRADE_POINTS) return
 
         val ols = olsGradePercent(path) ?: return
-        if (abs(ols) > MAX_GRADE_PERCENT) return
-
-        smoothedGradePercent = if (!hasGrade) {
-            hasGrade = true
-            ols
-        } else {
-            GRADE_EMA * smoothedGradePercent + (1f - GRADE_EMA) * ols
+        // Huawei SlopeLinkage: discard outside ±101 exclusive
+        val clamped = HuaweiHealthRideDefaults.clampSlopePercent(ols) ?: return
+        slopeBuffer.addLast(clamped)
+        while (slopeBuffer.size > HuaweiHealthRideDefaults.SLOPE_BUFFER_N) {
+            slopeBuffer.removeFirst()
         }
+        val now = SystemClock.elapsedRealtime()
+        val due = lastSlopeFlushElapsedMs == 0L ||
+            now - lastSlopeFlushElapsedMs >= HuaweiHealthRideDefaults.SLOPE_REFRESH_MS ||
+            slopeBuffer.size >= HuaweiHealthRideDefaults.SLOPE_BUFFER_N
+        if (!due || slopeBuffer.isEmpty()) return
+        lastSlopeFlushElapsedMs = now
+        // SlopeLinkageDataManager.d: round(sum/count)
+        val avg = slopeBuffer.sum() / slopeBuffer.size
+        val rounded = avg.roundToInt().toFloat()
+        val published = HuaweiHealthRideDefaults.clampSlopePercent(rounded) ?: return
+        smoothedGradePercent = published
+        hasGrade = true
+        slopeBuffer.clear()
     }
 
     private fun publishAltitudeOnly() {
@@ -244,15 +304,16 @@ class ElevationTracker(context: Context) {
         private const val MIN_GRADE_WINDOW_M = 20f
         private const val MIN_POINT_SPACING_M = 4f
         private const val MIN_GRADE_POINTS = 4
-        private const val MAX_GRADE_PERCENT = 30f
-        /** OpenTracks default hysteresis for ascent/descent counting. */
-        private const val GAIN_HYSTERESIS_M = 3f
+        /** Match pre-opt fallback so altitude paints before a tight GPS lock. */
+        private const val ALTITUDE_DISPLAY_ACCURACY_M = 50f
         private const val SEA_LEVEL_PRESSURE_HPA = 1013.25f
 
         private const val PRESSURE_EMA = 0.88f
         private const val BARO_ALT_EMA = 0.82f
         private const val GPS_ALT_EMA = 0.92f
-        private const val GRADE_EMA = 0.78f
+
+        /** @see HuaweiHealthRideDefaults.ALTITUDE_NOISE_M */
+        val BARO_CREEPING_WAVE_M: Float get() = HuaweiHealthRideDefaults.ALTITUDE_NOISE_M
 
         fun pressureToAltitudeM(pressureHpa: Float): Float {
             return (44330f * (1f - (pressureHpa / SEA_LEVEL_PRESSURE_HPA).toDouble().pow(1.0 / 5.255)))
@@ -262,6 +323,94 @@ class ElevationTracker(context: Context) {
         fun gradePercent(riseM: Float, runM: Float): Float? {
             if (runM < 1f) return null
             return (riseM / runM) * 100f
+        }
+
+        data class CreepingWaveStep(
+            val extremeM: Float,
+            val direction: Int,
+            val gainDeltaM: Float,
+            val lossDeltaM: Float,
+        )
+
+        /**
+         * One online step of Huawei-style creeping-wave filter + ascent/descent accumulate.
+         * Sub-threshold reversals are ignored; confirmed legs accumulate every sample.
+         */
+        fun creepingWaveStep(
+            altitudeM: Float,
+            extremeM: Float,
+            direction: Int,
+            thresholdM: Float,
+        ): CreepingWaveStep {
+            var extreme = extremeM
+            var dir = direction
+            var gain = 0f
+            var loss = 0f
+            when (dir) {
+                0 -> {
+                    when {
+                        altitudeM >= extreme + thresholdM -> {
+                            gain = altitudeM - extreme
+                            extreme = altitudeM
+                            dir = 1
+                        }
+                        altitudeM <= extreme - thresholdM -> {
+                            loss = extreme - altitudeM
+                            extreme = altitudeM
+                            dir = -1
+                        }
+                    }
+                }
+                1 -> {
+                    when {
+                        altitudeM >= extreme -> {
+                            gain = altitudeM - extreme
+                            extreme = altitudeM
+                        }
+                        altitudeM <= extreme - thresholdM -> {
+                            loss = extreme - altitudeM
+                            extreme = altitudeM
+                            dir = -1
+                        }
+                    }
+                }
+                else -> {
+                    when {
+                        altitudeM <= extreme -> {
+                            loss = extreme - altitudeM
+                            extreme = altitudeM
+                        }
+                        altitudeM >= extreme + thresholdM -> {
+                            gain = altitudeM - extreme
+                            extreme = altitudeM
+                            dir = 1
+                        }
+                    }
+                }
+            }
+            return CreepingWaveStep(extreme, dir, gain, loss)
+        }
+
+        /**
+         * Batch form of [creepingWaveStep] — mirrors `TrackAltitudeMgr.d(heights, threshold)`.
+         */
+        fun creepingWaveGainLoss(
+            heights: List<Float>,
+            thresholdM: Float = BARO_CREEPING_WAVE_M,
+        ): Pair<Float, Float> {
+            if (heights.isEmpty()) return 0f to 0f
+            var extreme = heights.first()
+            var dir = 0
+            var gain = 0f
+            var loss = 0f
+            for (i in 1 until heights.size) {
+                val step = creepingWaveStep(heights[i], extreme, dir, thresholdM)
+                extreme = step.extremeM
+                dir = step.direction
+                gain += step.gainDeltaM
+                loss += step.lossDeltaM
+            }
+            return gain to loss
         }
 
         /**

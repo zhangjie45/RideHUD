@@ -63,5 +63,29 @@ class ElevationMathTest {
             ),
         )
     }
+
+    @Test
+    fun creepingWaveIgnoresSubThresholdNoise() {
+        // ±0.3 m wobble around 100 — below Huawei 0.6 m threshold → no gain/loss
+        val heights = listOf(100f, 100.3f, 99.8f, 100.2f, 99.9f, 100.1f)
+        val (gain, loss) = ElevationTracker.creepingWaveGainLoss(
+            heights,
+            ElevationTracker.BARO_CREEPING_WAVE_M,
+        )
+        assertEquals(0f, gain, 0.01f)
+        assertEquals(0f, loss, 0.01f)
+    }
+
+    @Test
+    fun creepingWaveCountsClimbAndDescent() {
+        // Climb 10 m then descend 4 m with 0.6 m gate
+        val heights = listOf(100f, 103f, 106f, 110f, 108f, 106f)
+        val (gain, loss) = ElevationTracker.creepingWaveGainLoss(
+            heights,
+            ElevationTracker.BARO_CREEPING_WAVE_M,
+        )
+        assertEquals(10f, gain, 0.05f)
+        assertEquals(4f, loss, 0.05f)
+    }
 }
 

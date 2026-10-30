@@ -1,6 +1,7 @@
 package zj.cursor.ridehud.data.ride
 
 import zj.cursor.ridehud.domain.CalorieEstimator
+import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
 import zj.cursor.ridehud.domain.RideMetrics
 import zj.cursor.ridehud.domain.RideRecord
 import zj.cursor.ridehud.domain.RideTrackPoint
@@ -10,15 +11,17 @@ import kotlin.math.max
 /**
  * Samples live metrics during a ride and builds a [RideRecord] on finish.
  *
- * Max-speed / elevation / avg use the same filtering ideas as OpenTracks & cycling_analyzer:
- * reject implausible peaks, prefer moving-time average, use hysteresis gain from ElevationTracker.
+ * Avg speed = Huawei PaceMapProducer (distance / 运动时间).
+ * Max speed = Huawei RealTimePaceUtil (jdi): sample every 5 s.
+ * Calories = TruSport EE total + active split (§11).
  */
 class RideRecorder {
     private var startEpochMs = 0L
     private var weightKg = 70f
     private var calories = 0.0
+    private var activeCalories = 0.0
     private var maxSpeed = 0f
-    private val recentSpeeds = ArrayDeque<Float>(3)
+    private var lastMaxSampleElapsedMs = -1L
     private var maxHr: Int? = null
     private var hrSum = 0.0
     private var hrCount = 0
@@ -34,8 +37,9 @@ class RideRecorder {
         this.weightKg = weightKg
         this.startEpochMs = startEpochMs
         calories = 0.0
+        activeCalories = 0.0
         maxSpeed = 0f
-        recentSpeeds.clear()
+        lastMaxSampleElapsedMs = -1L
         maxHr = null
         hrSum = 0.0
         hrCount = 0
@@ -60,14 +64,25 @@ class RideRecorder {
             gradePercent = metrics.gradePercent,
             heartRateBpm = metrics.heartRateBpm,
         )
+        val activeRate = CalorieEstimator.activeKcalPerSecond(
+            weightKg = weightKg,
+            speedKmh = metrics.speedKmh,
+            gradePercent = metrics.gradePercent,
+            heartRateBpm = metrics.heartRateBpm,
+        )
         calories += kcalRate * dtSec
+        activeCalories += activeRate * dtSec
 
-        // cycling_analyzer: max of short moving average, reject absurd peaks
-        recentSpeeds.addLast(metrics.speedKmh)
-        while (recentSpeeds.size > 3) recentSpeeds.removeFirst()
-        val windowAvg = recentSpeeds.average().toFloat()
-        if (windowAvg in 0.5f..MAX_PLAUSIBLE_SPEED_KMH) {
-            maxSpeed = max(maxSpeed, windowAvg)
+        // Huawei jdi RealTimePaceUtil: one sample every 5 s for max
+        val elapsed = metrics.elapsedMs
+        if (lastMaxSampleElapsedMs < 0L ||
+            elapsed - lastMaxSampleElapsedMs >= HuaweiHealthRideDefaults.MAX_SPEED_SAMPLE_INTERVAL_MS
+        ) {
+            lastMaxSampleElapsedMs = elapsed
+            val sample = metrics.speedKmh
+            if (sample in 0.5f..HuaweiHealthRideDefaults.SPEED_KMH_HARD_MAX) {
+                maxSpeed = max(maxSpeed, sample)
+            }
         }
 
         metrics.heartRateBpm?.let { hr ->
@@ -78,7 +93,6 @@ class RideRecorder {
             }
         }
 
-        // Prefer OpenTracks-style gain from ElevationTracker when present
         elevationGain = max(elevationGain, metrics.elevationGainM)
         elevationLoss = max(elevationLoss, metrics.elevationLossM)
 
@@ -87,7 +101,6 @@ class RideRecorder {
             maxAltitude = maxOf(maxAltitude ?: alt, alt)
         }
 
-        val elapsed = metrics.elapsedMs
         if (lastSampleElapsedMs < 0L || elapsed - lastSampleElapsedMs >= SAMPLE_INTERVAL_MS) {
             lastSampleElapsedMs = elapsed
             points += RideTrackPoint(
@@ -104,6 +117,10 @@ class RideRecorder {
     }
 
     fun currentCaloriesKcal(): Float = calories.toFloat()
+
+    fun currentActiveCaloriesKcal(): Float = activeCalories.toFloat()
+
+    fun currentMaxSpeedKmh(): Float = maxSpeed
 
     fun finish(metrics: RideMetrics, endEpochMs: Long = System.currentTimeMillis()): RideRecord? {
         if (!active) return null
@@ -125,18 +142,19 @@ class RideRecorder {
         elevationLoss = max(elevationLoss, metrics.elevationLossM)
 
         val elapsedMs = metrics.elapsedMs.coerceAtLeast(0L)
-        val movingMs = metrics.movingElapsedMs.coerceAtLeast(0L)
+        val totalElapsedMs = metrics.totalElapsedMs.coerceAtLeast(elapsedMs)
         val distanceM = metrics.distanceM.coerceAtLeast(0f)
-        val avgBasisMs = if (movingMs >= 1_000L) movingMs else elapsedMs
-        val avgSpeed = RideMetrics.averageSpeedKmh(distanceM, avgBasisMs)
+        val avgSpeed = RideMetrics.averageSpeedKmh(distanceM, elapsedMs)
 
         return RideRecord(
             id = UUID.randomUUID().toString(),
             startEpochMs = startEpochMs,
             endEpochMs = endEpochMs,
             elapsedMs = elapsedMs,
+            totalElapsedMs = totalElapsedMs,
             distanceM = distanceM,
             caloriesKcal = calories.toFloat(),
+            activeCaloriesKcal = activeCalories.toFloat(),
             avgSpeedKmh = avgSpeed,
             maxSpeedKmh = maxSpeed,
             avgHeartRateBpm = if (hrCount > 0) (hrSum / hrCount).toFloat() else null,
@@ -153,6 +171,5 @@ class RideRecorder {
 
     companion object {
         private const val SAMPLE_INTERVAL_MS = 1_000L
-        private const val MAX_PLAUSIBLE_SPEED_KMH = 72f
     }
 }

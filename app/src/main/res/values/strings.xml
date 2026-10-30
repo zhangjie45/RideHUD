@@ -27,7 +27,8 @@
     <string name="altitude_unit">m</string>
     <string name="grade_label">坡度</string>
     <string name="grade_unit">%</string>
-    <string name="calories_label">热量</string>
+    <string name="calories_label">总热量</string>
+    <string name="active_calories_label">活动热量</string>
     <string name="calories_unit">kcal</string>
     <string name="paused">已暂停</string>
     <string name="live">LIVE</string>
@@ -41,8 +42,6 @@
     <string name="hud_brand_name">骑行 HUD</string>
     <string name="label_speed">SPEED</string>
     <string name="label_heart">心率 HEART</string>
-    <string name="label_time">时长 TIME</string>
-
     <string name="history_title">记录</string>
     <string name="history_subtitle">骑行数据列表</string>
     <string name="history_empty">暂无记录</string>
@@ -56,7 +55,9 @@
     <string name="weight_saved">已保存</string>
     <string name="calorie_formula_hint">热量按速度/坡度/心率估算，可在详情填入手表卡路里以便校准</string>
     <string name="ride_saved_toast">已保存 · %1$d kcal</string>
-    <string name="duration">时长</string>
+    <string name="duration">运动时间</string>
+    <string name="total_duration">总时长</string>
+    <string name="label_time">运动时间</string>
     <string name="distance_label">距离</string>
     <string name="avg_speed">均速</string>
     <string name="max_speed">极速</string>
@@ -70,7 +71,11 @@
     <string name="altitude_max_short">最高</string>
     <string name="altitude_min_short">最低</string>
     <string name="avg_hr">均心率</string>
-    <string name="elevation_gain">爬升</string>
+    <string name="elevation_gain">累积爬升</string>
+    <string name="elevation_loss">累积下降</string>
+    <string name="elevation_gain_short">爬升</string>
+    <string name="elevation_loss_short">下降</string>
+    <string name="elevation_net_short">净变化</string>
     <string name="formula_version">公式</string>
     <string name="more_actions">更多</string>
     <string name="watch_calories_label">手表热量</string>

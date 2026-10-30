@@ -66,8 +66,10 @@ class RideRepository(context: Context) {
         put("startEpochMs", record.startEpochMs)
         put("endEpochMs", record.endEpochMs)
         put("elapsedMs", record.elapsedMs)
+        put("totalElapsedMs", record.totalElapsedMs)
         put("distanceM", record.distanceM.toDouble())
         put("caloriesKcal", record.caloriesKcal.toDouble())
+        put("activeCaloriesKcal", record.activeCaloriesKcal.toDouble())
         put("avgSpeedKmh", record.avgSpeedKmh.toDouble())
         put("maxSpeedKmh", record.maxSpeedKmh.toDouble())
         put("avgHeartRateBpm", record.avgHeartRateBpm?.toDouble() ?: JSONObject.NULL)
@@ -122,8 +124,10 @@ class RideRepository(context: Context) {
             startEpochMs = json.getLong("startEpochMs"),
             endEpochMs = json.getLong("endEpochMs"),
             elapsedMs = json.getLong("elapsedMs"),
+            totalElapsedMs = json.optLong("totalElapsedMs", 0L),
             distanceM = json.getDouble("distanceM").toFloat(),
             caloriesKcal = json.getDouble("caloriesKcal").toFloat(),
+            activeCaloriesKcal = json.optDouble("activeCaloriesKcal", 0.0).toFloat(),
             avgSpeedKmh = json.getDouble("avgSpeedKmh").toFloat(),
             maxSpeedKmh = json.getDouble("maxSpeedKmh").toFloat(),
             avgHeartRateBpm = json.optFloatOrNull("avgHeartRateBpm"),

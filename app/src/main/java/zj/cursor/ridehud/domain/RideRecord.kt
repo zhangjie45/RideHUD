@@ -7,9 +7,14 @@ data class RideRecord(
     val id: String,
     val startEpochMs: Long,
     val endEpochMs: Long,
+    /** 运动时间（不含暂停）. */
     val elapsedMs: Long,
+    /** 总时长（含暂停）；旧记录可能为 0，UI 回退到 elapsedMs. */
+    val totalElapsedMs: Long = 0L,
     val distanceM: Float,
     val caloriesKcal: Float,
+    /** Active calories when computed (phone TruSport path); 0 if unknown. */
+    val activeCaloriesKcal: Float = 0f,
     val avgSpeedKmh: Float,
     val maxSpeedKmh: Float,
     val avgHeartRateBpm: Float?,

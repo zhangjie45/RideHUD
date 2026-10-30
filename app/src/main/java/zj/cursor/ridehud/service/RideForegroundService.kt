@@ -31,6 +31,9 @@ import zj.cursor.ridehud.data.gps.GpsTracker
 import zj.cursor.ridehud.data.prefs.RiderPrefs
 import zj.cursor.ridehud.data.ride.RideRecorder
 import zj.cursor.ridehud.data.ride.RideRepository
+import zj.cursor.ridehud.domain.BikeAutoPauseResumeStrategy
+import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
+import zj.cursor.ridehud.domain.RideMetrics
 import zj.cursor.ridehud.domain.RideSessionStore
 
 class RideForegroundService : Service() {
@@ -42,6 +45,7 @@ class RideForegroundService : Service() {
     private lateinit var riderPrefs: RiderPrefs
     private lateinit var rideRepository: RideRepository
     private val rideRecorder = RideRecorder()
+    private val bikeAutoPause = BikeAutoPauseResumeStrategy()
 
     private var elapsedJob: Job? = null
     private var sampleJob: Job? = null
@@ -49,7 +53,12 @@ class RideForegroundService : Service() {
     private var pausedAccumulatedMs = 0L
     private var pauseStartedElapsed = 0L
     private var isPaused = false
+    /** Manual pause must not be cleared by Huawei-style auto-resume. */
+    private var pauseByUser = false
+    private var pauseByAuto = false
     private var rideActive = false
+    /** Huawei jdh: continuous still below pause speed → auto-pause after AR_STILL_PAUSE_MS. */
+    private var stillBelowSinceElapsedMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -113,13 +122,18 @@ class RideForegroundService : Service() {
         RideSessionStore.resetMetrics()
         RideSessionStore.setRiding(true)
         isPaused = false
+        pauseByUser = false
+        pauseByAuto = false
         rideActive = true
         pausedAccumulatedMs = 0L
+        bikeAutoPause.reset()
+        stillBelowSinceElapsedMs = 0L
         rideStartElapsedRealtime = SystemClock.elapsedRealtime()
         rideRecorder.start(weightKg = riderPrefs.weightKg)
 
         elevationTracker.start()
         gpsTracker.start()
+        gpsTracker.setCountingDistance(true)
         if (!deviceAddress.isNullOrBlank()) {
             bleHrClient.connect(deviceAddress)
         }
@@ -131,25 +145,20 @@ class RideForegroundService : Service() {
                 val now = SystemClock.elapsedRealtime()
                 val dt = (now - lastTickElapsed).coerceIn(0L, 1_000L)
                 lastTickElapsed = now
-                if (!isPaused) {
-                    val elapsed = now - rideStartElapsedRealtime - pausedAccumulatedMs
-                    RideSessionStore.updateMetrics {
-                        val moving = if (it.speedKmh >= zj.cursor.ridehud.domain.RideMetrics.MOVING_SPEED_KMH) {
-                            it.movingElapsedMs + dt
-                        } else {
-                            it.movingElapsedMs
-                        }
-                        val avgBasis = if (moving >= 1_000L) moving else elapsed
-                        it.copy(
-                            elapsedMs = elapsed,
-                            movingElapsedMs = moving,
-                            avgSpeedKmh = zj.cursor.ridehud.domain.RideMetrics.averageSpeedKmh(
-                                it.distanceM,
-                                avgBasis,
-                            ),
-                            isPaused = false,
-                        )
-                    }
+                val totalElapsed = now - rideStartElapsedRealtime
+                val pausedSoFar = pausedAccumulatedMs +
+                    if (isPaused) (now - pauseStartedElapsed) else 0L
+                val sportElapsed = (totalElapsed - pausedSoFar).coerceAtLeast(0L)
+                RideSessionStore.updateMetrics {
+                    it.copy(
+                        // 运动时间 — Huawei TIME_ONE_SECOND_DURATION
+                        elapsedMs = sportElapsed,
+                        totalElapsedMs = totalElapsed,
+                        // Avg uses 运动时间 exclusively
+                        movingElapsedMs = sportElapsed,
+                        avgSpeedKmh = RideMetrics.averageSpeedKmh(it.distanceM, sportElapsed),
+                        isPaused = isPaused,
+                    )
                 }
                 delay(200L)
             }
@@ -161,7 +170,11 @@ class RideForegroundService : Service() {
                 if (!isPaused) {
                     rideRecorder.onTick(RideSessionStore.metrics.value)
                     RideSessionStore.updateMetrics {
-                        it.copy(caloriesKcal = rideRecorder.currentCaloriesKcal())
+                        it.copy(
+                            caloriesKcal = rideRecorder.currentCaloriesKcal(),
+                            activeCaloriesKcal = rideRecorder.currentActiveCaloriesKcal(),
+                            maxSpeedKmh = rideRecorder.currentMaxSpeedKmh(),
+                        )
                     }
                 }
                 delay(1_000L)
@@ -172,15 +185,35 @@ class RideForegroundService : Service() {
     private fun togglePause() {
         if (!RideSessionStore.isRiding.value) return
         if (isPaused) {
-            pausedAccumulatedMs += SystemClock.elapsedRealtime() - pauseStartedElapsed
-            isPaused = false
-            RideSessionStore.updateMetrics { it.copy(isPaused = false) }
+            // User explicitly resumes (clears both auto and manual)
+            applyPause(paused = false, byUser = false, byAuto = false)
         } else {
-            pauseStartedElapsed = SystemClock.elapsedRealtime()
-            isPaused = true
-            RideSessionStore.updateMetrics { it.copy(isPaused = true) }
+            applyPause(paused = true, byUser = true, byAuto = false)
         }
         updateNotification()
+    }
+
+    private fun applyPause(paused: Boolean, byUser: Boolean, byAuto: Boolean) {
+        if (paused == isPaused && pauseByUser == byUser && pauseByAuto == byAuto) return
+        if (paused && !isPaused) {
+            pauseStartedElapsed = SystemClock.elapsedRealtime()
+            isPaused = true
+            pauseByUser = byUser
+            pauseByAuto = byAuto
+            gpsTracker.setCountingDistance(false)
+            elevationTracker.setMovingForGainLoss(false)
+        } else if (!paused && isPaused) {
+            pausedAccumulatedMs += SystemClock.elapsedRealtime() - pauseStartedElapsed
+            isPaused = false
+            pauseByUser = false
+            pauseByAuto = false
+            gpsTracker.setCountingDistance(true)
+            elevationTracker.setMovingForGainLoss(true)
+        } else {
+            pauseByUser = byUser
+            pauseByAuto = byAuto
+        }
+        RideSessionStore.updateMetrics { it.copy(isPaused = isPaused) }
     }
 
     private fun stopRideInternal() {
@@ -247,29 +280,55 @@ class RideForegroundService : Service() {
         }
         scope.launch {
             gpsTracker.sample.collectLatest { sample ->
+                // Always evaluate Huawei bike auto-pause/resume (even while paused)
+                when (bikeAutoPause.onSpeedKmh(sample.speedKmh)) {
+                    BikeAutoPauseResumeStrategy.Action.Pause -> {
+                        if (!isPaused) {
+                            applyPause(paused = true, byUser = false, byAuto = true)
+                            updateNotification()
+                        }
+                    }
+                    BikeAutoPauseResumeStrategy.Action.Resume -> {
+                        if (isPaused && pauseByAuto && !pauseByUser) {
+                            applyPause(paused = false, byUser = false, byAuto = false)
+                            updateNotification()
+                        }
+                    }
+                    BikeAutoPauseResumeStrategy.Action.None -> Unit
+                }
+                // jdh AR still: < pause speed for 10s → auto-pause (covers sparse GPS)
+                val nowElapsed = SystemClock.elapsedRealtime()
+                if (sample.speedKmh < HuaweiHealthRideDefaults.bikePauseEnterKmh) {
+                    if (stillBelowSinceElapsedMs == 0L) {
+                        stillBelowSinceElapsedMs = nowElapsed
+                    } else if (!isPaused &&
+                        nowElapsed - stillBelowSinceElapsedMs >= HuaweiHealthRideDefaults.AR_STILL_PAUSE_MS
+                    ) {
+                        applyPause(paused = true, byUser = false, byAuto = true)
+                        updateNotification()
+                    }
+                } else {
+                    stillBelowSinceElapsedMs = 0L
+                }
+
+                RideSessionStore.updateMetrics {
+                    it.copy(
+                        speedKmh = sample.speedKmh,
+                        distanceM = sample.distanceM,
+                        avgSpeedKmh = RideMetrics.averageSpeedKmh(
+                            sample.distanceM,
+                            it.elapsedMs,
+                        ),
+                        // maxSpeed updated on 1s tick via RideRecorder (Huawei jdi 5s sample)
+                    )
+                }
+
                 if (!isPaused) {
                     sample.location?.let { location ->
-                        elevationTracker.onLocation(location, sample.distanceM)
-                    }
-                    RideSessionStore.updateMetrics {
-                        val maxSpeed = if (sample.speedKmh in 0.5f..72f) {
-                            maxOf(it.maxSpeedKmh, sample.speedKmh)
-                        } else {
-                            it.maxSpeedKmh
-                        }
-                        val avgBasis = if (it.movingElapsedMs >= 1_000L) {
-                            it.movingElapsedMs
-                        } else {
-                            it.elapsedMs
-                        }
-                        it.copy(
-                            speedKmh = sample.speedKmh,
-                            distanceM = sample.distanceM,
-                            avgSpeedKmh = zj.cursor.ridehud.domain.RideMetrics.averageSpeedKmh(
-                                sample.distanceM,
-                                avgBasis,
-                            ),
-                            maxSpeedKmh = maxSpeed,
+                        elevationTracker.onLocation(
+                            location,
+                            sample.distanceM,
+                            sample.speedKmh,
                         )
                     }
                 }

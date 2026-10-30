@@ -357,6 +357,8 @@ private fun TertiaryStrip(metrics: RideMetrics) {
     val animatedAlt by animateMetricFloat(metrics.altitudeM ?: 0f, "altitude")
     val animatedGrade by animateMetricFloat(grade ?: 0f, "grade")
     val animatedMax by animateMetricFloat(metrics.maxSpeedKmh, "maxSpeed")
+    val animatedGain by animateMetricFloat(metrics.elevationGainM, "elevGain")
+    val animatedLoss by animateMetricFloat(metrics.elevationLossM, "elevLoss")
     val animatedGradeColor by animateColorAsState(
         targetValue = gradeColor(grade),
         animationSpec = tween(METRIC_ANIM_MS, easing = FastOutSlowInEasing),
@@ -411,6 +413,31 @@ private fun TertiaryStrip(metrics: RideMetrics) {
                         stringResource(R.string.max_speed_short),
                         String.format(Locale.US, "%.1f", animatedMax),
                         "km/h",
+                    ),
+                ),
+            )
+            Box(
+                modifier = ComposeModifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(colors.outline.copy(alpha = 0.35f)),
+            )
+            MetricRow(
+                items = listOf(
+                    MetricCell(
+                        stringResource(R.string.elevation_gain_short),
+                        String.format(Locale.US, "%.0f", animatedGain),
+                        "m",
+                    ),
+                    MetricCell(
+                        stringResource(R.string.elevation_loss_short),
+                        String.format(Locale.US, "%.0f", animatedLoss),
+                        "m",
+                    ),
+                    MetricCell(
+                        stringResource(R.string.elevation_net_short),
+                        String.format(Locale.US, "%+.0f", animatedGain - animatedLoss),
+                        "m",
                     ),
                 ),
             )
