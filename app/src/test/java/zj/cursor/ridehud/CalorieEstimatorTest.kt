@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import zj.cursor.ridehud.domain.CalorieEstimator
-import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
+import zj.cursor.ridehud.domain.RideHudDefaults
 
 class CalorieEstimatorTest {
     @Test
@@ -32,22 +32,21 @@ class CalorieEstimatorTest {
     }
 
     @Test
-    fun truSportCapsSpeedAt6Mps() {
-        val atCap = CalorieEstimator.truSportEeKcalPerSecond(70f, 21.6f) // 6 m/s
-        val above = CalorieEstimator.truSportEeKcalPerSecond(70f, 40f)
+    fun speedScalingCapsAt6Mps() {
+        val atCap = CalorieEstimator.speedScalingKcalPerSecond(70f, 21.6f) // 6 m/s
+        val above = CalorieEstimator.speedScalingKcalPerSecond(70f, 40f)
         assertEquals(atCap, above, 1e-6)
     }
 
     @Test
     fun acsmManualMatchesMet8() {
-        // 30 min, 70 kg, MET 8 → (8*3.5*30*70)/200 = 294
         val kcal = CalorieEstimator.acsmBikeKcal(70f, 30 * 60_000L)
         assertEquals(294f, kcal, 0.5f)
-        assertEquals(8f, HuaweiHealthRideDefaults.BIKE_METS, 0.01f)
+        assertEquals(8f, RideHudDefaults.BIKE_METS, 0.01f)
     }
 
     @Test
-    fun formulaVersionIsTruSport() {
-        assertEquals("ridehud-v3-trusport-ee-bike", CalorieEstimator.FORMULA_VERSION)
+    fun formulaVersionIsStable() {
+        assertEquals("ridehud-v3-speed-scaling-bike", CalorieEstimator.FORMULA_VERSION)
     }
 }

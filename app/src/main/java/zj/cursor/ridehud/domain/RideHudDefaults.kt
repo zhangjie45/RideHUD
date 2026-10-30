@@ -1,13 +1,12 @@
 package zj.cursor.ridehud.domain
 
 /**
- * Defaults lifted from Huawei Health APK REA notes.
+ * RideHUD metric defaults (auto-pause, altitude, speed, slope, calories).
  *
- * Source of truth: [docs/rea-huawei-health-evidence.md] §2 / §3 / §5 / §6 / §10
- * Prefer these over ad-hoc OpenTracks numbers wherever the phone can approximate Health.
+ * Tuned from REA field notes — see [docs/rea-metric-evidence.md].
  */
-object HuaweiHealthRideDefaults {
-    // --- BikeAutoPauseResumeStrategy (jdk) — exact m/s from APK ---
+object RideHudDefaults {
+    // --- Bike auto-pause / resume ---
     const val BIKE_SPEED_WINDOW = 4
     const val BIKE_PAUSE_MPS = 0.5555556f
     const val BIKE_RESUME_STRONG_MPS = 2.3611112f
@@ -21,65 +20,62 @@ object HuaweiHealthRideDefaults {
     val bikeResumeWeakKmh: Float get() = BIKE_RESUME_WEAK_MPS * 3.6f // 6.5
     val bikeResumeFlatKmh: Float get() = BIKE_RESUME_FLAT_MPS * 3.6f // 6.0
 
-    /** AR still auto-pause delay (jdh). */
+    /** Still-state auto-pause delay. */
     const val AR_STILL_PAUSE_MS = 10_000L
-    /** Power-save still delay (jdo) — not used for ride HUD. */
+    /** Power-save still delay — not used for ride HUD. */
     const val POWER_SAVE_STILL_MS = 120_000L
 
-    // --- TrackAltitudeMgr ---
+    // --- Elevation ---
     /** Creeping-wave threshold on barometer path. */
     const val ALTITUDE_NOISE_M = 0.6f
-    /** Phone GNSS-only fallback (Health baro path is quieter). */
+    /** GNSS-only fallback (vertical noise is higher without baro). */
     const val ALTITUDE_GPS_HYSTERESIS_M = 3f
 
-    // --- SpeedSource raw units: 1 raw = 0.01 km/h (log: 500 ⇒ 5 km/h) ---
+    // --- Speed raw units: 1 raw = 0.01 km/h ---
     const val SPEED_RAW_MAX = 4000
     const val SPEED_RAW_PER_KMH = 100
-    val speedKmhMax: Float get() = SPEED_RAW_MAX.toFloat() / SPEED_RAW_PER_KMH // 40 km/h Health clamp
-    /** RideHUD allows slightly above Health clamp for steep descents; hard reject above this. */
+    val speedKmhMax: Float get() = SPEED_RAW_MAX.toFloat() / SPEED_RAW_PER_KMH // 40 km/h soft clamp
+    /** Hard reject above this (steep descents). */
     const val SPEED_KMH_HARD_MAX = 72f
-    /** cleanSpeedData: raw/temp > 5 → treat as 10× inflated. */
+    /** Doppler vs Δd/Δt ratio above this → treat as 10× inflated. */
     const val SPEED_TENFOLD_RATIO = 5f
 
     const val CADENCE_RAW_DIVISOR = 2
 
-    // --- Invalid GPS sentinel (HwExerciseConstants + GeoUtils::IsPausePoint) ---
+    // --- Invalid GPS sentinel ---
     const val INVALID_GPS_LON = -80.0
     const val INVALID_GPS_LAT = 90.0
     const val INVALID_GPS_EPS = 1e-6
 
-    // --- Avg / max speed (PaceMapProducer / jjk) ---
-    // avgSpeed_kmh = distance_m / moving_time_s * 3.6
+    // --- Avg / max speed ---
     const val PACE_UNIT_M_BIKE = 1000
     /** Pace map remainder ≥ 5 m rounds toward next 10 m segment. */
     const val PACE_REMAINDER_ROUND_M = 5
     const val PACE_SEGMENT_M = 10
 
-    // --- SlopeLinkageDataManager (device slope is int %; we approximate with OLS + same buffer) ---
+    // --- Slope buffer (OLS then average) ---
     const val SLOPE_BUFFER_N = 5
     const val SLOPE_REFRESH_MS = 1_000L
     const val SLOPE_VALID_MIN_EXCLUSIVE = -101
     const val SLOPE_VALID_MAX_EXCLUSIVE = 101
     const val SLOPE_PERSIST_SCALE = 10
 
-    /** TRANS_INTO_KILOMETER */
     const val METERS_PER_KM = 1000
 
-    // --- Calories (§11) ---
-    /** SportTypeConfig mets for bike 259/265 (manual ACSM). */
+    // --- Calories ---
     const val BIKE_METS = 8f
-    /** ActiveCalorie sit component: rest_kcal/s = weight * this / 60. */
+    /** Rest component: rest_kcal/s = weight * this / 60. */
     const val SIT_REST_KCAL_PER_KG_PER_MIN = 0.02171
     /**
-     * TruSport EE CyclingSpeedScaling float[3] @ libtrusport_ee.so
-     * poly = A*v² + B*v + C, v in m/s capped at [TRUSPORT_SPEED_CAP_MPS].
+     * Cycling speed-scaling polynomial: poly = A*v² + B*v + C,
+     * v in m/s capped at [SPEED_SCALING_CAP_MPS].
      */
     const val CYCLING_SPEED_SCALING_A = 0.12543802f
     const val CYCLING_SPEED_SCALING_B = 0.39899185f
     const val CYCLING_SPEED_SCALING_C = 1.8341284f
-    const val TRUSPORT_SPEED_CAP_MPS = 6.0f
+    const val SPEED_SCALING_CAP_MPS = 6.0f
 
-    // --- Max speed RealTimePaceUtil (jdi) ---
+    // --- Max speed sampling ---
     const val MAX_SPEED_SAMPLE_INTERVAL_MS = 5_000L
     const val REALTIME_PACE_WINDOW = 12
 
@@ -90,7 +86,7 @@ object HuaweiHealthRideDefaults {
         return (distanceM / METERS_PER_KM / hours).toFloat()
     }
 
-    /** Health-style distance used for pace segments (remainder ≥ 5 → + to next 10 m). */
+    /** Distance used for pace segments (remainder ≥ 5 → + to next 10 m). */
     fun paceDistanceM(distanceM: Float): Float {
         if (distanceM <= 0f) return 0f
         val rem = (distanceM % PACE_SEGMENT_M).toInt()

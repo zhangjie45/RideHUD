@@ -13,7 +13,7 @@ data class RideRecord(
     val totalElapsedMs: Long = 0L,
     val distanceM: Float,
     val caloriesKcal: Float,
-    /** Active calories when computed (phone TruSport path); 0 if unknown. */
+    /** Active calories when computed; 0 if unknown. */
     val activeCaloriesKcal: Float = 0f,
     val avgSpeedKmh: Float,
     val maxSpeedKmh: Float,

@@ -8,7 +8,7 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.os.Build
 import android.os.SystemClock
-import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
+import zj.cursor.ridehud.domain.RideHudDefaults
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.pow
@@ -18,7 +18,7 @@ data class ElevationSample(
     val altitudeM: Float? = null,
     /** Grade percent, e.g. 5.2 means +5.2%. null until enough distance. */
     val gradePercent: Float? = null,
-    /** Cumulative ascent (Huawei creeping-wave / OpenTracks hysteresis). */
+    /** Cumulative ascent (creeping-wave / OpenTracks hysteresis). */
     val elevationGainM: Float = 0f,
     /** Cumulative descent. */
     val elevationLossM: Float = 0f,
@@ -49,7 +49,7 @@ class ElevationTracker(context: Context) {
     private var smoothedGradePercent = 0f
     private var hasGrade = false
 
-    /** Extreme altitude of current creeping-wave leg (Huawei TrackAltitudeMgr style). */
+    /** Extreme altitude of current creeping-wave leg. */
     private var waveExtremeM: Float? = null
     /** 0 unknown, +1 ascending, -1 descending. */
     private var waveDirection = 0
@@ -61,8 +61,8 @@ class ElevationTracker(context: Context) {
 
     private var lastDistanceM = 0f
     private val path = ArrayDeque<PathPoint>()
-    /** Huawei SlopeLinkage: buffer of N OLS samples, flush ~1 s as rounded avg %. */
-    private val slopeBuffer = ArrayDeque<Float>(HuaweiHealthRideDefaults.SLOPE_BUFFER_N)
+    /** Slope buffer: buffer of N OLS samples, flush ~1 s as rounded avg %. */
+    private val slopeBuffer = ArrayDeque<Float>(RideHudDefaults.SLOPE_BUFFER_N)
     private var lastSlopeFlushElapsedMs = 0L
 
     private var latest = ElevationSample(hasBarometer = hasBarometer)
@@ -145,7 +145,7 @@ class ElevationTracker(context: Context) {
      */
     fun onLocation(location: Location, distanceM: Float, speedKmh: Float = 0f) {
         if (!running) return
-        movingForGainLoss = speedKmh >= HuaweiHealthRideDefaults.bikePauseEnterKmh
+        movingForGainLoss = speedKmh >= RideHudDefaults.bikePauseEnterKmh
 
         val gpsAltitude = if (location.hasAltitude()) location.altitude.toFloat() else null
         if (gpsAltitude != null) {
@@ -191,15 +191,15 @@ class ElevationTracker(context: Context) {
     }
 
     /**
-     * Huawei [TrackAltitudeMgr] creeping-wave (threshold 0.6 m on baro path).
+     * Creeping-wave altitude (threshold 0.6 m on baro path).
      * GPS-only uses a larger threshold (3 m) — phone GNSS vertical noise is worse than baro.
      * While stopped, slide the extreme with altitude (no accumulate).
      */
     private fun updateElevationGainLoss(smoothedAlt: Float) {
         val thr = if (usingGpsOnlyAltitude || !hasBarometer) {
-            HuaweiHealthRideDefaults.ALTITUDE_GPS_HYSTERESIS_M
+            RideHudDefaults.ALTITUDE_GPS_HYSTERESIS_M
         } else {
-            HuaweiHealthRideDefaults.ALTITUDE_NOISE_M
+            RideHudDefaults.ALTITUDE_NOISE_M
         }
         val extreme = waveExtremeM
         if (extreme == null) {
@@ -254,22 +254,22 @@ class ElevationTracker(context: Context) {
         if (window < MIN_GRADE_WINDOW_M || path.size < MIN_GRADE_POINTS) return
 
         val ols = olsGradePercent(path) ?: return
-        // Huawei SlopeLinkage: discard outside ±101 exclusive
-        val clamped = HuaweiHealthRideDefaults.clampSlopePercent(ols) ?: return
+        // Slope buffer: discard outside ±101 exclusive
+        val clamped = RideHudDefaults.clampSlopePercent(ols) ?: return
         slopeBuffer.addLast(clamped)
-        while (slopeBuffer.size > HuaweiHealthRideDefaults.SLOPE_BUFFER_N) {
+        while (slopeBuffer.size > RideHudDefaults.SLOPE_BUFFER_N) {
             slopeBuffer.removeFirst()
         }
         val now = SystemClock.elapsedRealtime()
         val due = lastSlopeFlushElapsedMs == 0L ||
-            now - lastSlopeFlushElapsedMs >= HuaweiHealthRideDefaults.SLOPE_REFRESH_MS ||
-            slopeBuffer.size >= HuaweiHealthRideDefaults.SLOPE_BUFFER_N
+            now - lastSlopeFlushElapsedMs >= RideHudDefaults.SLOPE_REFRESH_MS ||
+            slopeBuffer.size >= RideHudDefaults.SLOPE_BUFFER_N
         if (!due || slopeBuffer.isEmpty()) return
         lastSlopeFlushElapsedMs = now
         // SlopeLinkageDataManager.d: round(sum/count)
         val avg = slopeBuffer.sum() / slopeBuffer.size
         val rounded = avg.roundToInt().toFloat()
-        val published = HuaweiHealthRideDefaults.clampSlopePercent(rounded) ?: return
+        val published = RideHudDefaults.clampSlopePercent(rounded) ?: return
         smoothedGradePercent = published
         hasGrade = true
         slopeBuffer.clear()
@@ -312,8 +312,8 @@ class ElevationTracker(context: Context) {
         private const val BARO_ALT_EMA = 0.82f
         private const val GPS_ALT_EMA = 0.92f
 
-        /** @see HuaweiHealthRideDefaults.ALTITUDE_NOISE_M */
-        val BARO_CREEPING_WAVE_M: Float get() = HuaweiHealthRideDefaults.ALTITUDE_NOISE_M
+        /** @see RideHudDefaults.ALTITUDE_NOISE_M */
+        val BARO_CREEPING_WAVE_M: Float get() = RideHudDefaults.ALTITUDE_NOISE_M
 
         fun pressureToAltitudeM(pressureHpa: Float): Float {
             return (44330f * (1f - (pressureHpa / SEA_LEVEL_PRESSURE_HPA).toDouble().pow(1.0 / 5.255)))
@@ -333,7 +333,7 @@ class ElevationTracker(context: Context) {
         )
 
         /**
-         * One online step of Huawei-style creeping-wave filter + ascent/descent accumulate.
+         * One online step of RideHUD creeping-wave filter + ascent/descent accumulate.
          * Sub-threshold reversals are ignored; confirmed legs accumulate every sample.
          */
         fun creepingWaveStep(

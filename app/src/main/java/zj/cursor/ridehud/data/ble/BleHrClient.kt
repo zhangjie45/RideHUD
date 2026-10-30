@@ -33,7 +33,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Connects to a BLE Heart Rate Monitor (Huawei GT Runner HR broadcast uses GATT 0x180D).
+ * Connects to a BLE Heart Rate Monitor (GATT service 0x180D).
  */
 class BleHrClient(
     context: Context,
@@ -88,7 +88,7 @@ class BleHrClient(
 
         try {
             scanner.startScan(listOf(filter), settings, scanCallback)
-            // Also scan without filter — some Huawei firmware omits service UUID in ads
+            // Also scan without filter — some firmware omits service UUID in ads
             scanner.startScan(null, settings, unfilteredScanCallback)
         } catch (e: SecurityException) {
             Log.e(TAG, "scan failed", e)
@@ -246,10 +246,10 @@ class BleHrClient(
             val uuids = result.scanRecord?.serviceUuids.orEmpty()
             val name = result.device.name ?: result.scanRecord?.deviceName
             val looksLikeHr = uuids.any { it.uuid == HR_SERVICE_UUID } ||
-                name?.contains("HUAWEI", ignoreCase = true) == true ||
-                name?.contains("GT", ignoreCase = true) == true ||
+                name?.contains("HR", ignoreCase = true) == true ||
+                name?.contains("HEART", ignoreCase = true) == true ||
                 name?.contains("WATCH", ignoreCase = true) == true ||
-                name?.contains("RUNNER", ignoreCase = true) == true
+                name?.contains("BAND", ignoreCase = true) == true
             if (looksLikeHr) {
                 handleScanResult(result)
             }

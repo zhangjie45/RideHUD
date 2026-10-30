@@ -6,12 +6,12 @@ data class RideMetrics(
     val maxSpeedKmh: Float = 0f,
     val heartRateBpm: Int? = null,
     val distanceM: Float = 0f,
-    /** 运动时间 — excludes auto/manual pause (Huawei TIME_ONE_SECOND_DURATION). */
+    /** 运动时间 — excludes auto/manual pause (sport duration (excludes pause)). */
     val elapsedMs: Long = 0L,
     /** 总时长 — wall clock from ride start (includes pauses). */
     val totalElapsedMs: Long = 0L,
     /**
-     * Kept for compatibility; with Huawei auto-pause this tracks the same as [elapsedMs]
+     * Kept for compatibility; with auto-pause this tracks the same as [elapsedMs]
      * (avg speed = distance / 运动时间).
      */
     val movingElapsedMs: Long = 0L,
@@ -20,18 +20,18 @@ data class RideMetrics(
     val elevationGainM: Float = 0f,
     val elevationLossM: Float = 0f,
     val caloriesKcal: Float = 0f,
-    /** Active calories (total − rest), Huawei activeCalorie split. */
+    /** Active calories (total − rest), active vs total split. */
     val activeCaloriesKcal: Float = 0f,
     val hasBarometer: Boolean = false,
     val isPaused: Boolean = false,
 ) {
     companion object {
-        /** Huawei bike auto-pause enter (~2 km/h) — idle MET / calorie gate. */
-        val MOVING_SPEED_KMH: Float get() = HuaweiHealthRideDefaults.bikePauseEnterKmh
+        /** RideHUD bike auto-pause enter (~2 km/h) — idle MET / calorie gate. */
+        val MOVING_SPEED_KMH: Float get() = RideHudDefaults.bikePauseEnterKmh
 
-        /** Huawei PaceMapProducer / jjk: distance / 运动时间. */
+        /** pace (distance / sport time) / jjk: distance / 运动时间. */
         fun averageSpeedKmh(distanceM: Float, elapsedMs: Long): Float =
-            HuaweiHealthRideDefaults.avgSpeedKmh(distanceM, elapsedMs)
+            RideHudDefaults.avgSpeedKmh(distanceM, elapsedMs)
     }
 }
 

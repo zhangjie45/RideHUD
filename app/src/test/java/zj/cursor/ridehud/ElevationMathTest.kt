@@ -66,7 +66,7 @@ class ElevationMathTest {
 
     @Test
     fun creepingWaveIgnoresSubThresholdNoise() {
-        // ±0.3 m wobble around 100 — below Huawei 0.6 m threshold → no gain/loss
+        // ±0.3 m wobble around 100 — below 0.6 m threshold → no gain/loss
         val heights = listOf(100f, 100.3f, 99.8f, 100.2f, 99.9f, 100.1f)
         val (gain, loss) = ElevationTracker.creepingWaveGainLoss(
             heights,

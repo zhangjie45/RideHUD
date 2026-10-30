@@ -32,7 +32,7 @@ import zj.cursor.ridehud.data.prefs.RiderPrefs
 import zj.cursor.ridehud.data.ride.RideRecorder
 import zj.cursor.ridehud.data.ride.RideRepository
 import zj.cursor.ridehud.domain.BikeAutoPauseResumeStrategy
-import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
+import zj.cursor.ridehud.domain.RideHudDefaults
 import zj.cursor.ridehud.domain.RideMetrics
 import zj.cursor.ridehud.domain.RideSessionStore
 
@@ -53,11 +53,11 @@ class RideForegroundService : Service() {
     private var pausedAccumulatedMs = 0L
     private var pauseStartedElapsed = 0L
     private var isPaused = false
-    /** Manual pause must not be cleared by Huawei-style auto-resume. */
+    /** Manual pause must not be cleared by RideHUD auto-resume. */
     private var pauseByUser = false
     private var pauseByAuto = false
     private var rideActive = false
-    /** Huawei jdh: continuous still below pause speed → auto-pause after AR_STILL_PAUSE_MS. */
+    /** still-timer: continuous still below pause speed → auto-pause after AR_STILL_PAUSE_MS. */
     private var stillBelowSinceElapsedMs = 0L
 
     override fun onCreate() {
@@ -151,7 +151,7 @@ class RideForegroundService : Service() {
                 val sportElapsed = (totalElapsed - pausedSoFar).coerceAtLeast(0L)
                 RideSessionStore.updateMetrics {
                     it.copy(
-                        // 运动时间 — Huawei TIME_ONE_SECOND_DURATION
+                        // 运动时间 — sport duration (excludes pause)
                         elapsedMs = sportElapsed,
                         totalElapsedMs = totalElapsed,
                         // Avg uses 运动时间 exclusively
@@ -280,7 +280,7 @@ class RideForegroundService : Service() {
         }
         scope.launch {
             gpsTracker.sample.collectLatest { sample ->
-                // Always evaluate Huawei bike auto-pause/resume (even while paused)
+                // Always evaluate bike auto-pause/resume (even while paused)
                 when (bikeAutoPause.onSpeedKmh(sample.speedKmh)) {
                     BikeAutoPauseResumeStrategy.Action.Pause -> {
                         if (!isPaused) {
@@ -298,11 +298,11 @@ class RideForegroundService : Service() {
                 }
                 // jdh AR still: < pause speed for 10s → auto-pause (covers sparse GPS)
                 val nowElapsed = SystemClock.elapsedRealtime()
-                if (sample.speedKmh < HuaweiHealthRideDefaults.bikePauseEnterKmh) {
+                if (sample.speedKmh < RideHudDefaults.bikePauseEnterKmh) {
                     if (stillBelowSinceElapsedMs == 0L) {
                         stillBelowSinceElapsedMs = nowElapsed
                     } else if (!isPaused &&
-                        nowElapsed - stillBelowSinceElapsedMs >= HuaweiHealthRideDefaults.AR_STILL_PAUSE_MS
+                        nowElapsed - stillBelowSinceElapsedMs >= RideHudDefaults.AR_STILL_PAUSE_MS
                     ) {
                         applyPause(paused = true, byUser = false, byAuto = true)
                         updateNotification()
@@ -319,7 +319,7 @@ class RideForegroundService : Service() {
                             sample.distanceM,
                             it.elapsedMs,
                         ),
-                        // maxSpeed updated on 1s tick via RideRecorder (Huawei jdi 5s sample)
+                        // maxSpeed updated on 1s tick via RideRecorder (5s max-speed sample)
                     )
                 }
 

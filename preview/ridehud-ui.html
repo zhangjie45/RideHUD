@@ -76,7 +76,7 @@
 
     .phone {
       width: 360px;
-      height: 740px;
+      height: 780px;
       border-radius: 36px;
       padding: 12px;
       background: linear-gradient(145deg, #1a2430, #0a1016);
@@ -287,7 +287,7 @@
     .strip-row {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      padding: 12px 0;
+      padding: 10px 0;
     }
     .strip-row + .strip-row { border-top: 1px solid rgba(61, 78, 92, 0.35); }
     .cell {
@@ -460,8 +460,8 @@
 <body>
   <h1>RideHUD · 当前 UI 预览</h1>
   <p class="intro">
-    按现有 Compose 实现还原：连接页 / 骑行 HUD / 记录列表 + 详情。
-    配色取自 M3 neon 主题（cyan / surfaceContainer）。浏览器打开本文件即可对照，标出想改的地方。
+    按当前 Compose 实现还原：连接页 / 骑行 HUD（含爬升·下降·净变化）/ 记录列表 + 详情（运动时间、总时长、活动热量等）。
+    配色取自 M3 neon 主题。用浏览器打开本文件即可对照。
   </p>
 
   <div class="gallery">
@@ -490,13 +490,13 @@
             <div class="spacer"></div>
             <div class="row gap">
               <button class="btn tonal grow">扫描设备</button>
-              <span class="chip" style="border-color: rgba(79,216,235,.35); background: rgba(0,78,92,.45); color: var(--on-primary-container);">GT Runner</span>
+              <span class="chip" style="border-color: rgba(79,216,235,.35); background: rgba(0,78,92,.45); color: var(--on-primary-container);">HR Band</span>
             </div>
 
             <div class="device-list">
               <div class="device card selected" style="padding: 14px 16px;">
                 <div>
-                  <div class="t">HUAWEI Watch GT Runner</div>
+                  <div class="t">Watch HR Band</div>
                   <div class="s">AA:BB:CC:DD:EE:01</div>
                 </div>
                 <div class="rssi" style="color: var(--on-primary-container);">-58 dBm</div>
@@ -547,7 +547,7 @@
                 <div class="metric-val hr"><span id="hud-hr">142</span><span class="u">bpm</span></div>
               </div>
               <div class="card">
-                <div class="label">时长 TIME</div>
+                <div class="label">运动时间</div>
                 <div class="metric-val" id="hud-time">48:22</div>
               </div>
             </div>
@@ -565,7 +565,7 @@
                   <div class="u">km/h</div>
                 </div>
                 <div class="cell">
-                  <div class="label">热量</div>
+                  <div class="label">总热量</div>
                   <div class="v" id="hud-kcal">486</div>
                   <div class="u">kcal</div>
                 </div>
@@ -585,6 +585,23 @@
                   <div class="label">峰值速</div>
                   <div class="v" id="hud-max">38.1</div>
                   <div class="u">km/h</div>
+                </div>
+              </div>
+              <div class="strip-row">
+                <div class="cell">
+                  <div class="label">爬升</div>
+                  <div class="v" id="hud-gain">186</div>
+                  <div class="u">m</div>
+                </div>
+                <div class="cell">
+                  <div class="label">下降</div>
+                  <div class="v" id="hud-loss">92</div>
+                  <div class="u">m</div>
+                </div>
+                <div class="cell">
+                  <div class="label">净变化</div>
+                  <div class="v" id="hud-net">+94</div>
+                  <div class="u">m</div>
                 </div>
               </div>
             </div>
@@ -662,12 +679,15 @@
           <div class="detail-pad">
             <div class="card high">
               <div style="font-size:20px;font-weight:700;margin-bottom:10px;">2026-10-26 18:40</div>
-              <div class="metric-line"><span>时长</span><span>00:48:22</span></div>
+              <div class="metric-line"><span>运动时间</span><span>00:48:22</span></div>
+              <div class="metric-line"><span>总时长</span><span>00:52:10</span></div>
               <div class="metric-line"><span>距离</span><span>18.42 km</span></div>
-              <div class="metric-line"><span>热量</span><span>486 kcal</span></div>
+              <div class="metric-line"><span>总热量</span><span>486 kcal</span></div>
+              <div class="metric-line"><span>活动热量</span><span>412 kcal</span></div>
               <div class="metric-line"><span>均速</span><span>22.8 km/h</span></div>
               <div class="metric-line"><span>极速</span><span>38.1 km/h</span></div>
-              <div class="metric-line"><span>爬升</span><span>186 m</span></div>
+              <div class="metric-line"><span>累积爬升</span><span>186.0 m</span></div>
+              <div class="metric-line"><span>累积下降</span><span>92.0 m</span></div>
             </div>
             <div class="card chart-card">
               <div class="chart-head">
@@ -724,8 +744,8 @@
 
   <div class="note">
     <strong>对照说明：</strong>
-    HUD 主数字是车速环；次级为心率 | 时长；底部两行三列（距离/均速/热量 · 海拔/坡度/峰值速）；按钮为「暂停 / 结束」。
-    记录页以列表为主，高级能力藏在菜单。若要改布局、字号、颜色或信息优先级，直接说改哪一屏即可。
+    HUD：车速环 → 心率 | 运动时间 → 三行指标（距离/均速/总热量 · 海拔/坡度/峰值速 · 爬升/下降/净变化）→ 暂停/结束。
+    详情：运动时间与总时长分开；总热量/活动热量；累积爬升/下降。速度预览按轻 EMA 跟手跳动（非一秒一格）。
   </div>
 
   <script>
@@ -741,6 +761,8 @@
         alt: 86,
         grade: 3.2,
         max: 38.1,
+        gain: 186,
+        loss: 92,
       };
       const target = { ...state };
 
@@ -755,6 +777,9 @@
         alt: document.getElementById("hud-alt"),
         grade: document.getElementById("hud-grade"),
         max: document.getElementById("hud-max"),
+        gain: document.getElementById("hud-gain"),
+        loss: document.getElementById("hud-loss"),
+        net: document.getElementById("hud-net"),
       };
 
       function rand(min, max) {
@@ -814,19 +839,26 @@
         el.grade.className = "v " + tone.cls;
         el.grade.style.color = tone.color;
         el.max.textContent = state.max.toFixed(1);
+        el.gain.textContent = String(Math.round(state.gain));
+        el.loss.textContent = String(Math.round(state.loss));
+        const net = Math.round(state.gain - state.loss);
+        el.net.textContent = (net >= 0 ? "+" : "") + String(net);
         el.ring.style.setProperty("--progress", String(Math.min(1, state.speed / MAX_SPEED)));
       }
 
-      setInterval(retarget, 900);
+      setInterval(retarget, 700);
       setInterval(function () {
         state.elapsed += 1;
         state.dist += state.speed / 3600;
         state.kcal += (state.speed * 0.012 + state.hr * 0.0015) / 10;
         if (state.speed > state.max) state.max = state.speed;
+        if (state.grade > 0.5) state.gain += state.grade * 0.015;
+        if (state.grade < -0.5) state.loss += -state.grade * 0.015;
       }, 1000);
 
       function tick() {
-        state.speed = lerp(state.speed, target.speed, 0.08);
+        // ~DISPLAY_EMA 0.65 feel — snappy, not 1s stairs
+        state.speed = lerp(state.speed, target.speed, 0.18);
         state.hr = lerp(state.hr, target.hr, 0.1);
         state.grade = lerp(state.grade, target.grade, 0.07);
         state.alt = lerp(state.alt, target.alt, 0.06);

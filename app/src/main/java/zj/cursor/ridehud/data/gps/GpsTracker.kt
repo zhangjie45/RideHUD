@@ -10,7 +10,7 @@ import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
+import zj.cursor.ridehud.domain.RideHudDefaults
 import kotlin.math.abs
 
 data class GpsSample(
@@ -23,10 +23,10 @@ data class GpsSample(
 /**
  * Phone GPS speed/distance for cycling HUD.
  *
- * Huawei Health alignment (docs/rea-huawei-health-evidence.md):
- * - SpeedSource-style Δd/Δt cross-check + 10× sticky correction
- * - Invalid sentinel (-80, 90); stop threshold = bike auto-pause enter (~2 km/h)
- * - Distance only while counting (pause freezes)
+ * Instant speed ≈ REA [SpeedSource]:
+ * raw (Doppler) → cleanSpeedData → **light** EMA (kill chip jitter, not 1s stairs).
+ *
+ * Max speed sampling (5 s) stays in [RideRecorder].
  */
 class GpsTracker(context: Context) {
     private val locationManager =
@@ -36,16 +36,12 @@ class GpsTracker(context: Context) {
     val sample: StateFlow<GpsSample> = _sample.asStateFlow()
 
     private var lastLocation: Location? = null
-    private var lastSpeedUpdateElapsedMs: Long = 0L
     private var totalDistanceM = 0f
-    private var smoothedSpeedMps = 0f
+    private var displaySpeedKmh = 0f
     private var running = false
     /** When false (ride paused), keep last distance — don't add GPS drift. */
     private var countingDistance = true
-
-    /** Rolling window for median filter (odd size). */
-    private val speedWindow = ArrayDeque<Float>(MEDIAN_WINDOW)
-    /** SpeedSource sticky: Doppler reported 10× too large. */
+    /** SpeedSource sticky: raw looked ~10× too large. */
     private var speedNeedDivideTen = false
 
     private val listener = object : LocationListener {
@@ -67,14 +63,11 @@ class GpsTracker(context: Context) {
         running = true
         totalDistanceM = 0f
         lastLocation = null
-        lastSpeedUpdateElapsedMs = 0L
-        smoothedSpeedMps = 0f
-        speedWindow.clear()
+        displaySpeedKmh = 0f
         speedNeedDivideTen = false
         _sample.value = GpsSample()
 
         try {
-            // GPS for speed/distance; network only helps altitude indoors (never drives speed).
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
@@ -93,7 +86,6 @@ class GpsTracker(context: Context) {
                     Looper.getMainLooper(),
                 )
             }
-            // Seed altitude ASAP from cache (common indoors before a fresh fix)
             seedLastKnownForAltitude()
         } catch (_: SecurityException) {
             running = false
@@ -135,7 +127,6 @@ class GpsTracker(context: Context) {
     fun setCountingDistance(enabled: Boolean) {
         countingDistance = enabled
         if (!enabled) {
-            // Drop previous fix so resume doesn't invent a teleport delta
             lastLocation = null
         }
     }
@@ -147,11 +138,10 @@ class GpsTracker(context: Context) {
         val isNetwork = provider == LocationManager.NETWORK_PROVIDER
         if (!isGps && !isNetwork) return
 
-        if (HuaweiHealthRideDefaults.isInvalidGpsSentinel(location.longitude, location.latitude)) {
+        if (RideHudDefaults.isInvalidGpsSentinel(location.longitude, location.latitude)) {
             return
         }
 
-        // Network / coarse GPS: forward for altitude only — never touch speed/distance filters
         val speedQuality = isGps &&
             location.hasAccuracy() &&
             location.accuracy <= MAX_ACCURACY_M
@@ -167,43 +157,19 @@ class GpsTracker(context: Context) {
         val previous = lastLocation
         lastLocation = location
 
-        val cleanedKmh = cleanSpeedKmh(location, previous) ?: run {
-            publishAltitudeOnly(location)
-            return
-        }
-        val rawSpeedMps = cleanedKmh / 3.6f
-        val nowElapsed = android.os.SystemClock.elapsedRealtime()
-        val dtSpeed = if (lastSpeedUpdateElapsedMs == 0L) {
-            1f
+        // SpeedSource clean, then one-pole EMA only (α high → still snappy)
+        val cleaned = cleanSpeedKmh(location, previous)
+        displaySpeedKmh = if (displaySpeedKmh <= 0.01f) {
+            cleaned
         } else {
-            ((nowElapsed - lastSpeedUpdateElapsedMs) / 1000f).coerceIn(0.3f, 3f)
+            DISPLAY_EMA * cleaned + (1f - DISPLAY_EMA) * displaySpeedKmh
         }
-        lastSpeedUpdateElapsedMs = nowElapsed
+        val speedKmh = displaySpeedKmh
 
-        val maxMps = HuaweiHealthRideDefaults.SPEED_KMH_HARD_MAX / 3.6f
-        val stoppedMps = HuaweiHealthRideDefaults.BIKE_PAUSE_MPS
-        // Clamp acceleration so one bad Doppler spike can't swing the HUD
-        val maxDelta = MAX_ACCEL_MPS2 * dtSpeed
-        val accelClamped = if (smoothedSpeedMps == 0f && speedWindow.isEmpty()) {
-            rawSpeedMps
-        } else {
-            val baseline = if (speedWindow.isEmpty()) smoothedSpeedMps else median(speedWindow)
-            rawSpeedMps.coerceIn(baseline - maxDelta, baseline + maxDelta)
-        }.coerceIn(0f, maxMps)
+        val maxMps = RideHudDefaults.SPEED_KMH_HARD_MAX / 3.6f
+        val stoppedMps = RideHudDefaults.BIKE_PAUSE_MPS
+        val displayMps = speedKmh / 3.6f
 
-        pushSpeed(accelClamped)
-        val medianSpeed = median(speedWindow)
-
-        smoothedSpeedMps = if (smoothedSpeedMps <= 0.01f) {
-            medianSpeed
-        } else {
-            EMA_ALPHA * medianSpeed + (1f - EMA_ALPHA) * smoothedSpeedMps
-        }
-
-        val displayMps = if (smoothedSpeedMps < stoppedMps) 0f else smoothedSpeedMps
-        val speedKmh = displayMps * 3.6f
-
-        // Distance: reject GPS wander while stopped
         if (countingDistance && previous != null) {
             val delta = previous.distanceTo(location)
             val dt = (location.time - previous.time) / 1000f
@@ -228,42 +194,43 @@ class GpsTracker(context: Context) {
     }
 
     /**
-     * Huawei [SpeedSource.cleanSpeedData]: cross-check Doppler vs Δd/Δt;
-     * if Doppler looks ~10× high, divide and sticky-flag; clamp to Health raw max.
+     * Port of SpeedSource.cleanSpeedData + generateData assign.
+     *
+     * REA: compare raw vs Δd/Δt temp; if raw/temp > 5 → raw/10 sticky;
+     * legal range else → 0. Then assign as display speed.
      */
-    private fun cleanSpeedKmh(location: Location, previous: Location?): Float? {
-        val d = HuaweiHealthRideDefaults
-        var kmh = when {
+    private fun cleanSpeedKmh(location: Location, previous: Location?): Float {
+        val d = RideHudDefaults
+        // Prefer Doppler (chip speed); else Δd/Δt like SpeedSource rate path
+        var rawKmh = when {
             location.hasSpeed() && location.speed >= 0f -> location.speed * 3.6f
             previous != null -> {
-                val dt = (location.time - previous.time) / 1000f
-                if (dt < 0.5f) return null
-                previous.distanceTo(location) / dt * 3.6f
-            }
+                val dt = (location.time - previous.time) / 1000.0
+                if (dt <= 1e-9) 0.0 else previous.distanceTo(location) / dt * 3.6
+            }.toFloat()
             else -> 0f
         }
+
+        val tempKmh = if (previous != null) {
+            val dt = (location.time - previous.time) / 1000.0
+            if (dt <= 1e-9) 0f
+            else (previous.distanceTo(location) / dt * 3.6).toFloat()
+        } else {
+            0f
+        }
+
         if (speedNeedDivideTen) {
-            kmh /= 10f
-        } else if (previous != null && kmh >= 5f) {
-            val dt = (location.time - previous.time) / 1000f
-            if (dt >= 0.5f) {
-                val viaDist = previous.distanceTo(location) / dt * 3.6f
-                if (viaDist > 0.3f && kmh / viaDist > d.SPEED_TENFOLD_RATIO) {
-                    kmh /= 10f
-                    speedNeedDivideTen = true
-                }
-            }
+            rawKmh /= 10f
+        } else if (rawKmh >= 5f && tempKmh > 0.3f && rawKmh / tempKmh > d.SPEED_TENFOLD_RATIO) {
+            rawKmh /= 10f
+            speedNeedDivideTen = true
         }
-        // Health legal raw [0, 4000] → [0, 40] km/h; hard-cap higher spikes for descents
-        if (kmh < 0f || kmh > d.SPEED_KMH_HARD_MAX) return 0f
-        if (kmh > d.speedKmhMax) {
-            // Soft Health clamp for display path still allows up to HARD_MAX after accel filter
-            return kmh
-        }
-        return kmh
+
+        // REA legal [0, 4000] raw → [0, 40] km/h else 0; allow HARD_MAX for steep descents
+        if (rawKmh < 0f || rawKmh > d.SPEED_KMH_HARD_MAX) return 0f
+        return rawKmh
     }
 
-    /** Keep last speed/distance; only refresh location for elevation. */
     private fun publishAltitudeOnly(location: Location) {
         val current = _sample.value
         _sample.value = current.copy(
@@ -273,34 +240,17 @@ class GpsTracker(context: Context) {
         )
     }
 
-    private fun pushSpeed(mps: Float) {
-        speedWindow.addLast(mps)
-        while (speedWindow.size > MEDIAN_WINDOW) {
-            speedWindow.removeFirst()
-        }
-    }
-
-    private fun median(values: Collection<Float>): Float {
-        if (values.isEmpty()) return 0f
-        val sorted = values.sorted()
-        val mid = sorted.size / 2
-        return if (sorted.size % 2 == 1) {
-            sorted[mid]
-        } else {
-            (sorted[mid - 1] + sorted[mid]) * 0.5f
-        }
-    }
-
     companion object {
-        private const val MIN_TIME_MS = 1000L
+        /** Deliver as fast as the provider will. */
+        private const val MIN_TIME_MS = 0L
         private const val MIN_DISTANCE_M = 0f
         private const val MAX_ACCURACY_M = 25f
-        /** Looser than speed gate so HUD altitude can appear indoors / before GPS lock. */
         private const val ALTITUDE_MAX_ACCURACY_M = 50f
         private const val MAX_JUMP_M = 60f
-        /** ~0.35 g — aggressive for a bike, enough to kill GPS spikes. */
-        private const val MAX_ACCEL_MPS2 = 2.5f
-        private const val MEDIAN_WINDOW = 5
-        private const val EMA_ALPHA = 0.22f
+        /**
+         * Light display blend only — was 0.22 (+ median) which stair-stepped;
+         * 0.65 keeps SpeedSource snappiness while damping Doppler flicker.
+         */
+        private const val DISPLAY_EMA = 0.65f
     }
 }

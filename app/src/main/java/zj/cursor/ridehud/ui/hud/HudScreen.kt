@@ -68,6 +68,8 @@ import kotlin.math.min
 
 private const val MAX_SPEED_RING = 45f
 private const val METRIC_ANIM_MS = 420
+/** Instant speed follows SpeedSource-style direct assign — keep tween short. */
+private const val SPEED_ANIM_MS = 160
 
 @Composable
 fun HudScreen(
@@ -218,10 +220,15 @@ private fun LiveChip(paused: Boolean) {
 @Composable
 private fun SpeedRing(speedKmh: Float) {
     val colors = MaterialTheme.colorScheme
-    val animatedSpeed by animateMetricFloat(speedKmh, "speed")
-    val animatedProgress by animateMetricFloat(
-        (speedKmh / MAX_SPEED_RING).coerceIn(0f, 1f),
-        "speedProgress",
+    val animatedSpeed by animateFloatAsState(
+        targetValue = speedKmh,
+        animationSpec = tween(durationMillis = SPEED_ANIM_MS, easing = FastOutSlowInEasing),
+        label = "speed",
+    )
+    val animatedProgress by animateFloatAsState(
+        targetValue = (speedKmh / MAX_SPEED_RING).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = SPEED_ANIM_MS, easing = FastOutSlowInEasing),
+        label = "speedProgress",
     )
 
     BoxWithConstraints(

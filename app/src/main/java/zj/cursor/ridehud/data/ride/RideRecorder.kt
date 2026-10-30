@@ -1,7 +1,7 @@
 package zj.cursor.ridehud.data.ride
 
 import zj.cursor.ridehud.domain.CalorieEstimator
-import zj.cursor.ridehud.domain.HuaweiHealthRideDefaults
+import zj.cursor.ridehud.domain.RideHudDefaults
 import zj.cursor.ridehud.domain.RideMetrics
 import zj.cursor.ridehud.domain.RideRecord
 import zj.cursor.ridehud.domain.RideTrackPoint
@@ -11,9 +11,9 @@ import kotlin.math.max
 /**
  * Samples live metrics during a ride and builds a [RideRecord] on finish.
  *
- * Avg speed = Huawei PaceMapProducer (distance / 运动时间).
- * Max speed = Huawei RealTimePaceUtil (jdi): sample every 5 s.
- * Calories = TruSport EE total + active split (§11).
+ * Avg speed = pace (distance / sport time) (distance / 运动时间).
+ * Max speed = sample every 5 s.
+ * Calories = speed-scaling total + active split.
  */
 class RideRecorder {
     private var startEpochMs = 0L
@@ -73,14 +73,14 @@ class RideRecorder {
         calories += kcalRate * dtSec
         activeCalories += activeRate * dtSec
 
-        // Huawei jdi RealTimePaceUtil: one sample every 5 s for max
+        // one sample every 5 s for max
         val elapsed = metrics.elapsedMs
         if (lastMaxSampleElapsedMs < 0L ||
-            elapsed - lastMaxSampleElapsedMs >= HuaweiHealthRideDefaults.MAX_SPEED_SAMPLE_INTERVAL_MS
+            elapsed - lastMaxSampleElapsedMs >= RideHudDefaults.MAX_SPEED_SAMPLE_INTERVAL_MS
         ) {
             lastMaxSampleElapsedMs = elapsed
             val sample = metrics.speedKmh
-            if (sample in 0.5f..HuaweiHealthRideDefaults.SPEED_KMH_HARD_MAX) {
+            if (sample in 0.5f..RideHudDefaults.SPEED_KMH_HARD_MAX) {
                 maxSpeed = max(maxSpeed, sample)
             }
         }

@@ -1,16 +1,16 @@
 package zj.cursor.ridehud.domain
 
 /**
- * Huawei Health [Track_BikeAutoPauseResumeStrategy] (`jdk`) port.
+ * RideHUD [Track_BikeAutoPauseResumeStrategy] (`jdk`) port.
  *
  * Input: rolling queue of up to 4 speed samples in **m/s**.
  * RideHUD feeds km/h and converts internally.
  *
- * Evidence: docs/rea-huawei-health-evidence.md §2.1
- * Constants: [HuaweiHealthRideDefaults]
+ * Evidence: docs/rea-ridehud-health-evidence.md §2.1
+ * Constants: [RideHudDefaults]
  */
 class BikeAutoPauseResumeStrategy(
-    private val windowSize: Int = HuaweiHealthRideDefaults.BIKE_SPEED_WINDOW,
+    private val windowSize: Int = RideHudDefaults.BIKE_SPEED_WINDOW,
 ) {
     enum class Action { None, Pause, Resume }
 
@@ -35,7 +35,7 @@ class BikeAutoPauseResumeStrategy(
     }
 
     private fun shouldPause(list: List<Float>): Boolean {
-        val thr = HuaweiHealthRideDefaults.BIKE_PAUSE_MPS
+        val thr = RideHudDefaults.BIKE_PAUSE_MPS
         for (i in 0 until list.size - 1) {
             if (list[i] < thr && list[i + 1] < thr) return true
         }
@@ -43,7 +43,7 @@ class BikeAutoPauseResumeStrategy(
     }
 
     private fun shouldResume(list: List<Float>): Boolean {
-        val d = HuaweiHealthRideDefaults
+        val d = RideHudDefaults
         if (hasRisingWindow(list, n = 2, thr = d.BIKE_RESUME_STRONG_MPS)) return true
         if (hasRisingWindow(list, n = 3, thr = d.BIKE_RESUME_MID_MPS)) return true
         if (hasRisingWindow(list, n = 4, thr = d.BIKE_RESUME_WEAK_MPS)) return true
