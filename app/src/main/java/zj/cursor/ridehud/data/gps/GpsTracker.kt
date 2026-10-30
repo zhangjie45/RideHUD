@@ -206,8 +206,9 @@ class GpsTracker(context: Context) {
             location.hasSpeed() && location.speed >= 0f -> location.speed * 3.6f
             previous != null -> {
                 val dt = (location.time - previous.time) / 1000.0
-                if (dt <= 1e-9) 0.0 else previous.distanceTo(location) / dt * 3.6
-            }.toFloat()
+                if (dt <= 1e-9) 0f
+                else (previous.distanceTo(location) / dt * 3.6).toFloat()
+            }
             else -> 0f
         }
 
